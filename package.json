@@ -1,0 +1,36 @@
+{
+  "name": "mutation-invariance-kit",
+  "version": "0.1.0",
+  "description": "Prove a decision, score, or ranking function's output does not depend on a variable it claims not to depend on (a protected attribute, geography, price, or any axis you name) — a generic runtime mutation-and-diff check, framework-agnostic.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./presets": "./src/presets/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "invariance",
+    "fairness-testing",
+    "algorithmic-accountability",
+    "property-testing",
+    "testing",
+    "honesty",
+    "vitest"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "typescript": "^5.5.4",
+    "vitest": "^4.1.10"
+  }
+}
