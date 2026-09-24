@@ -1,0 +1,14 @@
+{
+  "mutation-invariance-kit": [
+    "assertInvariance",
+    "deepEqual",
+    "geographyScenarios",
+    "priceScenarios",
+    "protectedAttributeScenarios"
+  ],
+  "mutation-invariance-kit/presets": [
+    "geographyScenarios",
+    "priceScenarios",
+    "protectedAttributeScenarios"
+  ]
+}
