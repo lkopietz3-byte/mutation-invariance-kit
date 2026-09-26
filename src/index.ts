@@ -16,6 +16,7 @@
  */
 
 import { deepEqual } from "./deepEqual.js";
+import { snapshot } from "./snapshot.js";
 import type { InvarianceResult, MutationScenario } from "./types.js";
 
 export type {
@@ -131,6 +132,12 @@ function validateScenarios<Input>(scenarios: unknown): MutationScenario<Input>[]
  * - `mutate` throws.
  * - `fn` or `mutate` returns a Promise (or any thenable). This function is
  *   synchronous; see README.md for how to check an async function.
+ * - `fn` or `mutate` modified `baseInput` in place (detected by comparing
+ *   against a deep copy taken before the first call). Copy before you sort or
+ *   edit; every later scenario starts from the same `baseInput`. In-place
+ *   changes inside values the copy keeps by reference (functions, `Error`,
+ *   `Promise`, private `#fields`, ...) are not detected.
+ * - a later `fn` call modified the object `fn` returned for the baseline.
  * - `isEqual` or `hasChanged` returns anything but a boolean (for example a
  *   Promise), or `cleanup` returns a Promise.
  *
@@ -151,6 +158,17 @@ export function assertInvariance<Input, Output>(
   const list = validateScenarios<Input>(scenarios);
   const isEqual = opts.isEqual ?? deepEqual;
   const hasChanged = opts.hasChanged ?? ((base, mutated) => !deepEqual(base, mutated));
+
+  const pristine = snapshot(baseInput);
+  const assertBaseUntouched = (who: string): void => {
+    if (!deepEqual(pristine, baseInput)) {
+      throw new Error(
+        `assertInvariance: ${who} modified baseInput in place. Neither fn nor mutate may change its ` +
+          `argument (copy before sorting or editing); every scenario starts from the same baseInput, ` +
+          `so the comparison can no longer be trusted.`,
+      );
+    }
+  };
 
   const callFn = (input: Input, where: string): Output => {
     let output: Output | undefined;
@@ -201,6 +219,11 @@ export function assertInvariance<Input, Output>(
   };
 
   const baseline = callFn(baseInput, "on the baseline input");
+  assertBaseUntouched("fn (on the baseline input)");
+  // fn may return an object it later reuses (a buffer it clears and refills).
+  // If a later call rewrote the baseline in place, baseline and actual would be
+  // the same object and always compare equal, so detect that too.
+  const baselineCopy = snapshot(baseline);
 
   const failures: InvarianceResult<Input, Output>["failures"] = [];
   const vacuous: string[] = [];
@@ -219,6 +242,7 @@ export function assertInvariance<Input, Output>(
         `assertInvariance: scenario "${name}": mutate() returned a Promise (or thenable). mutate must be synchronous.`,
       );
     }
+    assertBaseUntouched(`scenario "${name}": mutate()`);
 
     // Precondition guard: a mutation that changed nothing can't prove
     // invariance. Flag it instead of letting it silently count as a pass.
@@ -228,6 +252,13 @@ export function assertInvariance<Input, Output>(
     }
 
     const actual = callFn(mutatedInput, `on the mutated input for scenario "${name}" (it did not throw on the baseline input)`);
+    assertBaseUntouched(`scenario "${name}": fn`);
+    if (!deepEqual(baselineCopy, baseline)) {
+      throw new Error(
+        `assertInvariance: fn modified its earlier (baseline) output in place during scenario "${name}". ` +
+          `Return a fresh value from every call, or the baseline can no longer be compared.`,
+      );
+    }
 
     if (!checkedBoolean("isEqual", `for scenario "${name}"`, isEqual(baseline, actual))) {
       failures.push({ scenario: name, category, mutatedInput, expected: baseline, actual });
