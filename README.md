@@ -1,23 +1,23 @@
 # mutation-invariance-kit
 
-A small, zero-dependency, framework-agnostic TypeScript library for proving
-that a decision, score, or ranking function's output does **not** secretly
-depend on a variable it claims not to depend on — done as a real automated
-test, not a written policy.
+A small, zero-dependency, framework-agnostic TypeScript library for testing
+whether a decision, score, or ranking function's output changes when a
+claimed-irrelevant input changes. It runs as an automated test, not a written
+policy.
 
 The mechanism is simple: take a real input, mutate one thing you claim
 doesn't matter (a name, a zip code, a price, anything), re-run the real
 function, and diff the output against the unmutated baseline. If the output
-changes, the claim was false. If it doesn't, you have evidence for the
-claim — not proof, evidence, for the specific things you tried (see
-"Limits" below).
+changes, the function depends on that input for this scenario. If it doesn't,
+the result is evidence only for the specific mutation you tried (see "Limits"
+below).
 
 This is the same mechanism as
-[`payout-invariance-kit`](../payout-invariance-kit)'s
+[`payout-invariance-kit`](https://github.com/lkopietz3-byte/payout-invariance-kit)'s
 `assertPayoutInvariance`, generalized. **payout-invariance-kit is the
 sharpest, most specific instance of this pattern, kept as its own focused
-package on purpose** — if what you need is "prove my rankings aren't
-influenced by which option pays me more," use that package; it has a
+package on purpose** — if what you need is to test whether payout changes
+affect your rankings in specified scenarios, use that package; it has a
 tighter pitch and a companion static check (`assertNoPayoutImports`) built
 around that one axis. **Use this package when you need the general
 mechanism for an axis payout-invariance-kit doesn't cover** — a protected
@@ -28,31 +28,14 @@ attribute, geography, price, or something specific to your own domain.
 Comparison sites, lenders, insurers, hiring tools, and ad platforms
 routinely say some version of "our algorithm doesn't take X into account."
 Usually that's a sentence in a policy document, not something checked by
-CI. This library turns it into a test: if a future refactor lets X leak
-into the decision, the test fails the build. That converts a claim about
-intentions into a property of the code that's verified on every commit.
+CI. This library makes part of that claim testable: if the output changes
+under one of your configured mutations, the test fails. A passing result is
+evidence for those scenarios, not proof of broader independence from X.
 
-There's real regulatory interest in exactly this kind of testing, though it
-is worth being precise about what that interest actually is:
-
-- The **FTC** has published guidance urging companies to test their
-  algorithms for bias and discriminatory effects before deployment, and to
-  keep testing on a recurring basis afterward rather than treating a launch
-  as the end of the obligation.
-- In discussions around the EU's **Digital Markets Act**, an economic
-  expert panel report proposed masking a seller's identity in a
-  platform's underlying data and re-running its ranking algorithm as a way
-  to audit for self-preferencing (ranking a platform's own products above
-  competitors' for reasons other than genuine quality/relevance signals).
-
-Both of those are regulatory **directions and proposals** — a general call
-for recurring adversarial testing, and one expert-panel audit technique
-discussed in the DMA policy process. Neither is evidence that this exact
-packaged tool, or one like it, already exists as an off-the-shelf product
-elsewhere. Don't oversell it as "the FTC/EU-endorsed tool" — it isn't. It's
-a small library that implements one testing technique regulators have
-independently pointed toward, so that a team that wants to do this kind of
-testing doesn't have to build the plumbing from scratch.
+The library tests the scenarios you specify. It does not establish legal
+compliance, a complete fairness audit, or whether a product is suitable for a
+regulated decision. Those questions require domain-specific review and tests
+beyond this package.
 
 ## Install
 
