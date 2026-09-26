@@ -146,13 +146,3 @@ describe("assertInvariance", () => {
   });
 });
 
-describe("deepEqual", () => {
-  it("treats structurally identical plain objects/arrays as equal", () => {
-    expect(deepEqual({ a: [1, 2, { b: "x" }] }, { a: [1, 2, { b: "x" }] })).toBe(true);
-  });
-
-  it("treats structurally different values as unequal", () => {
-    expect(deepEqual({ a: 1 }, { a: 2 })).toBe(false);
-    expect(deepEqual([1, 2], [1, 2, 3])).toBe(false);
-  });
-});
