@@ -18,7 +18,7 @@ export default defineConfig(
   },
   {
     name: 'kit/typescript',
-    files: ['src/**/*.ts', 'test/**/*.ts'],
+    files: ['src/**/*.ts', 'test/**/*.ts', 'examples/**/*.ts'],
     extends: [js.configs.recommended, tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
@@ -26,7 +26,7 @@ export default defineConfig(
   },
   {
     name: 'kit/async-test-doubles',
-    files: ['src/**/*.test.ts', 'test/**/*.ts'],
+    files: ['src/**/*.test.ts', 'test/**/*.ts', 'examples/**/*.test.ts'],
     rules: {
       // In-memory doubles implement async interfaces on purpose.
       '@typescript-eslint/require-await': 'off',
