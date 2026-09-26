@@ -8,6 +8,7 @@
 import type { MutationScenario } from "../types.js";
 import { getSetScenarios, validatePresetArguments } from "./_shared.js";
 
+/** Options for `geographyScenarios`. They affect scenario names only, never behavior. */
 export interface GeographyScenariosOptions {
   /** Label used in generated scenario names. Defaults to "geography". */
   fieldLabel?: string;

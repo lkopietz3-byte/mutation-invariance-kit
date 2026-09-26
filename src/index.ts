@@ -39,6 +39,7 @@ export type {
 
 export { deepEqual };
 
+/** Optional hooks for `assertInvariance`. Every hook must be synchronous. */
 export interface AssertInvarianceOptions<Input, Output> {
   /**
    * How to compare two outputs for equality. Defaults to `deepEqual`

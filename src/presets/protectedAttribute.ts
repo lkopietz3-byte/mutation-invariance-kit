@@ -9,6 +9,7 @@
 import type { MutationScenario } from "../types.js";
 import { getSetScenarios, validatePresetArguments } from "./_shared.js";
 
+/** Options for `protectedAttributeScenarios`. They affect scenario names only, never behavior. */
 export interface ProtectedAttributeScenariosOptions {
   /** Label used in generated scenario names. Defaults to "protected attribute". */
   fieldLabel?: string;

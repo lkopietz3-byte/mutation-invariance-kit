@@ -9,6 +9,7 @@
 import type { MutationScenario } from "../types.js";
 import { getSetScenarios, validatePresetArguments } from "./_shared.js";
 
+/** Options for `priceScenarios`. They affect scenario names only, never behavior. */
 export interface PriceScenariosOptions {
   /** Label used in generated scenario names. Defaults to "price". */
   fieldLabel?: string;
