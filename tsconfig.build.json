@@ -4,7 +4,8 @@
     "rootDir": "src",
     "outDir": "dist",
     "declaration": true,
-    "declarationMap": true,
+    "inlineSources": true,
+    "declarationMap": false,
     "sourceMap": true,
     "noEmit": false
   },
