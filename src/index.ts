@@ -1,32 +1,22 @@
 /**
  * mutation-invariance-kit
  * ------------------------
- * The general mechanism behind payout-invariance-kit's
- * `assertPayoutInvariance`, stripped of every payout-specific assumption:
- * mutate a variable a system claims NOT to depend on, re-run the system,
- * and assert the output is unchanged. Works for any "should not depend on
- * X" claim — a protected attribute, geography, price, payout, or anything
- * else you name.
+ * Change one thing a function claims not to depend on, re-run the function,
+ * and compare the output to the unmutated baseline. `assertInvariance` is the
+ * domain-agnostic engine; `presets/` adds three ready-made scenario
+ * generators (protected attribute, geography, price) built on plain
+ * getter/setter closures, with no path-string parsing anywhere.
  *
- * `assertInvariance` is the fully domain-agnostic core: inputs are just
- * `Input`, outputs are just `Output`, mutations are just functions. It
- * carries the same discipline as the payout-specific original — a
- * precondition guard that flags a mutation which didn't actually change
- * anything as `vacuous` rather than a silent pass, deep-equal comparison of
- * outputs, and an optional `cleanup` hook for functions under test that
- * touch external state.
+ * A passing result means "no difference in the scenarios you supplied", not
+ * "the function ignores this input". See README.md, "Honest limits".
  *
- * `presets/` supplies three ready-made scenario generators for real-world
- * axes (protected-attribute, geography, price) built on simple, explicit,
- * type-safe getter/setter closures — not a generic path-parsing utility.
- * See README.md for why.
- *
- * Zero runtime dependencies. Pure TypeScript. `assertInvariance` returns
- * plain data rather than calling a test framework's `expect()`, so it works
- * with vitest, jest, node:test, or a one-off script. See README.md for
- * adapter examples and how this package relates to payout-invariance-kit.
+ * Zero runtime dependencies. `assertInvariance` returns plain data rather
+ * than calling a test framework's `expect()`, so it works with vitest, jest,
+ * node:test, or a one-off script.
  */
 
+import { deepEqual } from "./deepEqual.js";
+import { snapshot } from "./snapshot.js";
 import type { InvarianceResult, MutationScenario } from "./types.js";
 
 export type {
@@ -47,134 +37,115 @@ export type {
   PriceScenariosOptions,
 } from "./presets/index.js";
 
-// ---------------------------------------------------------------------------
-// Shared: a small, dependency-free structural deep-equal.
-//
-// Same algorithm as payout-invariance-kit's `deepEqual` — reimplemented
-// here (not imported) so this package has zero dependency on that one and
-// stands entirely on its own.
-// ---------------------------------------------------------------------------
+export { deepEqual };
 
-/**
- * Structural deep equality for plain JS values: primitives, Date, RegExp,
- * arrays, Maps, Sets, and plain objects. Good enough for comparing
- * decisions/scores/rankings (arrays/objects of candidates, scores, ids)
- * without pulling in a dependency. NaN === NaN is treated as equal
- * (matches Object.is semantics for that one case), which is usually what
- * you want when comparing scores.
- */
-export function deepEqual(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true;
-
-  if (typeof a !== typeof b) return false;
-  if (a === null || b === null) return a === b;
-  if (typeof a !== "object") return false; // primitives already handled by Object.is
-
-  const objA = a as object;
-  const objB = b as object;
-
-  if (objA instanceof Date || objB instanceof Date) {
-    return objA instanceof Date && objB instanceof Date && objA.getTime() === objB.getTime();
-  }
-
-  if (objA instanceof RegExp || objB instanceof RegExp) {
-    return objA instanceof RegExp && objB instanceof RegExp && String(objA) === String(objB);
-  }
-
-  if (Array.isArray(objA) || Array.isArray(objB)) {
-    if (!Array.isArray(objA) || !Array.isArray(objB)) return false;
-    if (objA.length !== objB.length) return false;
-    return objA.every((item, i) => deepEqual(item, objB[i]));
-  }
-
-  if (objA instanceof Map || objB instanceof Map) {
-    if (!(objA instanceof Map) || !(objB instanceof Map)) return false;
-    if (objA.size !== objB.size) return false;
-    for (const [key, val] of objA) {
-      if (!objB.has(key) || !deepEqual(val, objB.get(key))) return false;
-    }
-    return true;
-  }
-
-  if (objA instanceof Set || objB instanceof Set) {
-    if (!(objA instanceof Set) || !(objB instanceof Set)) return false;
-    if (objA.size !== objB.size) return false;
-    for (const val of objA) {
-      let found = false;
-      for (const other of objB) {
-        if (deepEqual(val, other)) {
-          found = true;
-          break;
-        }
-      }
-      if (!found) return false;
-    }
-    return true;
-  }
-
-  const keysA = Object.keys(objA as Record<string, unknown>);
-  const keysB = Object.keys(objB as Record<string, unknown>);
-  if (keysA.length !== keysB.length) return false;
-  return keysA.every(
-    (key) =>
-      Object.prototype.hasOwnProperty.call(objB, key) &&
-      deepEqual((objA as Record<string, unknown>)[key], (objB as Record<string, unknown>)[key]),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// assertInvariance — the core, fully domain-agnostic engine.
-// ---------------------------------------------------------------------------
-
+/** Optional hooks for `assertInvariance`. Every hook must be synchronous. */
 export interface AssertInvarianceOptions<Input, Output> {
   /**
-   * How to compare two outputs for equality. Defaults to a structural
-   * deep-equal (see `deepEqual` above), which is byte-identical comparison
-   * for plain data. Override this if your function returns something with
-   * non-comparable fields (timestamps, random ids) that you want to
-   * ignore — project those out before comparing, or supply a custom
-   * comparator.
+   * How to compare two outputs for equality. Defaults to `deepEqual`
+   * (structural, strict: `NaN` equals `NaN`, `0` and `-0` differ, no
+   * floating-point tolerance). Override it to ignore fields such as
+   * timestamps or generated ids, or to compare with a tolerance.
    */
   isEqual?: (expected: Output, actual: Output) => boolean;
   /**
    * How to decide whether a mutation actually changed the input at all.
-   * Defaults to "the mutated input is not deep-equal to the base input" —
-   * a whole-object comparison, not field-path introspection. If `mutate()`
-   * produced something indistinguishable from the baseline, it clearly
-   * didn't change anything relevant either, and re-running the function
-   * under test would just be comparing an input to itself: a vacuous check
-   * that would pass no matter how sensitive the function secretly is to
-   * the thing you meant to mutate.
+   * Defaults to "the mutated input is not `deepEqual` to the base input", a
+   * whole-object comparison. A mutation that changed nothing would compare
+   * an input to itself and pass no matter how sensitive the function is, so
+   * it is reported in `vacuous` instead.
    *
-   * Supply your own to be more precise (e.g. compare only the specific
-   * field you intended to mutate) if you want a tighter guarantee that the
-   * CHANGED part is specifically the thing under test and not some
-   * unrelated field.
+   * Supply your own to check that the part that changed is the part you meant
+   * to test (for example, compare only the one field), because the default
+   * also treats a change to some unrelated field as a real mutation.
    */
   hasChanged?: (baseInput: Input, mutatedInput: Input) => boolean;
   /**
-   * Optional hook called after every invocation of `fn` — the baseline
-   * call and once per non-vacuous scenario — inside a `finally` block, so
-   * it still runs even if `fn` throws. Use this only if `fn` touches
-   * external state (a shared cache, a database row, a module-level
-   * counter) that needs to be reset between runs for the comparison to
-   * stay meaningful. A pure function never needs this.
+   * Called after every invocation of `fn` (the baseline call and once per
+   * non-vacuous scenario), even when `fn` throws. Use it only if `fn` touches
+   * external state (a shared cache, a database row, a module-level counter)
+   * that must be reset between runs for the comparison to mean anything. A
+   * pure function does not need it. If `cleanup` itself throws, that error is
+   * reported, unless `fn` also threw, in which case the `fn` error is the one
+   * thrown and the cleanup failure is mentioned in its message.
    */
   cleanup?: () => void;
 }
 
+function isThenable(value: unknown): boolean {
+  return (
+    (typeof value === "object" || typeof value === "function") &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === "function"
+  );
+}
+
+function describeError(error: unknown): string {
+  try {
+    return error instanceof Error ? error.message : String(error);
+  } catch {
+    return "(unprintable thrown value)";
+  }
+}
+
+function validateScenarios<Input>(scenarios: unknown): MutationScenario<Input>[] {
+  if (!Array.isArray(scenarios)) {
+    throw new TypeError("assertInvariance: scenarios must be an array of { name, mutate } objects.");
+  }
+  if (scenarios.length === 0) {
+    throw new Error(
+      "assertInvariance: scenarios is empty, so nothing would be tested. Pass at least one scenario.",
+    );
+  }
+  scenarios.forEach((scenario: unknown, index) => {
+    const candidate = scenario as Partial<MutationScenario<Input>> | null;
+    if (
+      typeof candidate !== "object" ||
+      candidate === null ||
+      typeof candidate.name !== "string" ||
+      typeof candidate.mutate !== "function"
+    ) {
+      throw new TypeError(
+        `assertInvariance: scenarios[${index}] must be an object with a string "name" and a "mutate" function.`,
+      );
+    }
+  });
+  return [...(scenarios as MutationScenario<Input>[])];
+}
+
 /**
- * Re-run a function once per mutation scenario and confirm its output is
- * unchanged from the unmutated baseline.
+ * Re-run `fn` once per mutation scenario and compare each output to the
+ * output for the unmutated `baseInput`.
  *
- * `fn` must be pure (same input -> same output, no hidden state) or the
- * comparison is meaningless — unless it touches external state that you
- * reset via `opts.cleanup` between calls. This library never calls `fn`
- * more than once per scenario and never mutates its result.
+ * Returns `{ passed, baseline, failures, vacuous }`. `passed` is true only when
+ * every scenario actually changed the input (none `vacuous`) and every changed
+ * input produced an output equal to the baseline. Passing means "no
+ * difference in these scenarios", not that the function ignores the mutated
+ * field. `fn` runs once for the baseline and once per non-vacuous scenario, in
+ * scenario order; each scenario's `mutate` runs once.
  *
- * Returns a plain result object rather than throwing or calling a test
- * framework's `expect()`, so it works with any test runner (or none). See
- * README.md for a vitest adapter example.
+ * Throws, rather than returning a result, when the run cannot be trusted:
+ * - `scenarios` is not a non-empty array of `{ name, mutate }` (checked before
+ *   anything runs, so `fn` is never called on a bad call).
+ * - `fn` throws on the baseline or on a mutated input. The error names the
+ *   scenario and keeps the original as `cause`; a throw on a mutated input is
+ *   never counted as "no difference".
+ * - `mutate` throws.
+ * - `fn` or `mutate` returns a Promise (or any thenable). This function is
+ *   synchronous; see README.md for how to check an async function.
+ * - `fn` or `mutate` modified `baseInput` in place (detected by comparing
+ *   against a deep copy taken before the first call). Copy before you sort or
+ *   edit; every later scenario starts from the same `baseInput`. In-place
+ *   changes inside values the copy keeps by reference (functions, `Error`,
+ *   `Promise`, private `#fields`, ...) are not detected.
+ * - a later `fn` call modified the object `fn` returned for the baseline.
+ * - `isEqual` or `hasChanged` returns anything but a boolean (for example a
+ *   Promise), or `cleanup` returns a Promise.
+ *
+ * Never mutates `baseInput` or the result of `fn` itself, and does not clone
+ * inputs it passes to your code. Never uses randomness or the clock: if `fn`
+ * or `mutate` does, pass a seeded generator or fixed clock in via the
+ * closure, or nondeterminism will show up as failures.
  */
 export function assertInvariance<Input, Output>(
   fn: (input: Input) => Output,
@@ -182,37 +153,115 @@ export function assertInvariance<Input, Output>(
   scenarios: MutationScenario<Input>[],
   opts: AssertInvarianceOptions<Input, Output> = {},
 ): InvarianceResult<Input, Output> {
+  if (typeof fn !== "function") {
+    throw new TypeError("assertInvariance: fn must be a function.");
+  }
+  const list = validateScenarios<Input>(scenarios);
   const isEqual = opts.isEqual ?? deepEqual;
   const hasChanged = opts.hasChanged ?? ((base, mutated) => !deepEqual(base, mutated));
 
-  let baseline: Output;
-  try {
-    baseline = fn(baseInput);
-  } finally {
-    opts.cleanup?.();
-  }
+  const pristine = snapshot(baseInput);
+  const assertBaseUntouched = (who: string): void => {
+    if (!deepEqual(pristine, baseInput)) {
+      throw new Error(
+        `assertInvariance: ${who} modified baseInput in place. Neither fn nor mutate may change its ` +
+          `argument (copy before sorting or editing); every scenario starts from the same baseInput, ` +
+          `so the comparison can no longer be trusted.`,
+      );
+    }
+  };
+
+  const callFn = (input: Input, where: string): Output => {
+    let output: Output | undefined;
+    let fnError: unknown;
+    let fnFailed = false;
+    try {
+      output = fn(input);
+    } catch (error) {
+      fnFailed = true;
+      fnError = error;
+    }
+    let cleanupNote = "";
+    try {
+      if (isThenable(opts.cleanup?.())) {
+        throw new TypeError("cleanup() returned a Promise (or thenable); cleanup must be synchronous.");
+      }
+    } catch (cleanupError) {
+      if (!fnFailed) {
+        throw new Error(`assertInvariance: cleanup() threw after ${where}: ${describeError(cleanupError)}`, {
+          cause: cleanupError,
+        });
+      }
+      cleanupNote = ` (cleanup() also threw: ${describeError(cleanupError)})`;
+    }
+    if (fnFailed) {
+      throw new Error(`assertInvariance: fn threw ${where}: ${describeError(fnError)}${cleanupNote}`, {
+        cause: fnError,
+      });
+    }
+    if (isThenable(output)) {
+      throw new TypeError(
+        `assertInvariance: fn returned a Promise (or thenable) ${where}. assertInvariance is ` +
+          `synchronous and would compare promises, not results. See the README section on async functions.`,
+      );
+    }
+    return output as Output;
+  };
+
+  const checkedBoolean = (hook: string, where: string, value: unknown): boolean => {
+    if (typeof value !== "boolean") {
+      throw new TypeError(
+        `assertInvariance: ${hook} must return a boolean, got ${
+          isThenable(value) ? "a Promise (or thenable)" : value === null ? "null" : typeof value
+        } ${where}.`,
+      );
+    }
+    return value;
+  };
+
+  const baseline = callFn(baseInput, "on the baseline input");
+  assertBaseUntouched("fn (on the baseline input)");
+  // fn may return an object it later reuses (a buffer it clears and refills).
+  // If a later call rewrote the baseline in place, baseline and actual would be
+  // the same object and always compare equal, so detect that too.
+  const baselineCopy = snapshot(baseline);
 
   const failures: InvarianceResult<Input, Output>["failures"] = [];
   const vacuous: string[] = [];
 
-  for (const { name, mutate, category } of scenarios) {
-    const mutatedInput = mutate(baseInput);
+  for (const { name, mutate, category } of list) {
+    let mutatedInput: Input;
+    try {
+      mutatedInput = mutate(baseInput);
+    } catch (error) {
+      throw new Error(`assertInvariance: scenario "${name}": mutate() threw: ${describeError(error)}`, {
+        cause: error,
+      });
+    }
+    if (isThenable(mutatedInput)) {
+      throw new TypeError(
+        `assertInvariance: scenario "${name}": mutate() returned a Promise (or thenable). mutate must be synchronous.`,
+      );
+    }
+    assertBaseUntouched(`scenario "${name}": mutate()`);
 
     // Precondition guard: a mutation that changed nothing can't prove
     // invariance. Flag it instead of letting it silently count as a pass.
-    if (!hasChanged(baseInput, mutatedInput)) {
+    if (!checkedBoolean("hasChanged", `for scenario "${name}"`, hasChanged(baseInput, mutatedInput))) {
       vacuous.push(name);
       continue;
     }
 
-    let actual: Output;
-    try {
-      actual = fn(mutatedInput);
-    } finally {
-      opts.cleanup?.();
+    const actual = callFn(mutatedInput, `on the mutated input for scenario "${name}" (it did not throw on the baseline input)`);
+    assertBaseUntouched(`scenario "${name}": fn`);
+    if (!deepEqual(baselineCopy, baseline)) {
+      throw new Error(
+        `assertInvariance: fn modified its earlier (baseline) output in place during scenario "${name}". ` +
+          `Return a fresh value from every call, or the baseline can no longer be compared.`,
+      );
     }
 
-    if (!isEqual(baseline, actual)) {
+    if (!checkedBoolean("isEqual", `for scenario "${name}"`, isEqual(baseline, actual))) {
       failures.push({ scenario: name, category, mutatedInput, expected: baseline, actual });
     }
   }
