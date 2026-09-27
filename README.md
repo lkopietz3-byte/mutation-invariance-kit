@@ -28,11 +28,11 @@ with vitest, jest, `node:test`, or a plain script.
 
 ## Install
 
-Not yet published to npm. Install from GitHub until it is:
-
 ```bash
-npm install --save-dev github:lkopietz3-byte/mutation-invariance-kit
+npm install --save-dev mutation-invariance-kit
 ```
+
+Or build from source: clone the repository and run `npm install && npm run build`.
 
 Requires Node 20 or later. ESM only. No runtime dependencies.
 
