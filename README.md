@@ -34,7 +34,9 @@ npm install --save-dev mutation-invariance-kit
 
 Or build from source: clone the repository and run `npm install && npm run build`.
 
-Requires Node 20 or later. ESM only. No runtime dependencies.
+Requires Node 20 or later. Ships as ESM; `require()` also works on Node
+versions that support `require(esm)` (20.19+, 22.12+). No runtime
+dependencies.
 
 ## Quickstart
 
