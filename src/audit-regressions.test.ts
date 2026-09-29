@@ -245,3 +245,28 @@ describe("presets: dense values, safe messages (bug class 2, 3, 6, 7 and 8)", ()
     }
   });
 });
+
+describe("remaining branches (tests audit)", () => {
+  it("names null as the bad hook result", () => {
+    expect(() => assertInvariance((input: Input) => input.x, { x: 0 }, [bumpX], { hasChanged: () => null as never })).toThrow(
+      /hasChanged must return a boolean, got null/,
+    );
+  });
+
+  it("describes what a broken getter returned without running caller code", () => {
+    const cases: [unknown, string][] = [
+      [-0, "-0"],
+      [7, "7"],
+      ["x\ny", String.raw`"x\ny"`],
+      [{ toString: (): string => "never called" }, "an object"],
+      [() => 1, "a function"],
+      [Symbol("s"), "a symbol"],
+      [undefined, "undefined"],
+      [null, "null"],
+    ];
+    for (const [returned, shown] of cases) {
+      const [scenario] = priceScenarios((() => returned) as unknown as (row: { p: number }) => number, (row) => row, [0]);
+      expect(() => scenario?.mutate({ p: 1 })).toThrow(`(get() returned ${shown} right after set())`);
+    }
+  });
+});

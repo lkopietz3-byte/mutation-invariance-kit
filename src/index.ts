@@ -180,7 +180,7 @@ export function assertInvariance<Input, Output>(
   fn: (input: Input) => Output,
   baseInput: Input,
   scenarios: MutationScenario<Input>[],
-  opts: AssertInvarianceOptions<Input, Output> = {},
+  opts?: AssertInvarianceOptions<Input, Output>,
 ): InvarianceResult<Input, Output> {
   if (typeof fn !== "function") {
     throw new TypeError("assertInvariance: fn must be a function.");
