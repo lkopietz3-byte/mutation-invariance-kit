@@ -32,11 +32,24 @@ with vitest, jest, `node:test`, or a plain script.
 npm install --save-dev mutation-invariance-kit
 ```
 
-Or build from source: clone the repository and run `npm install && npm run build`.
+Or build from source: clone the repository and run `npm ci && npm run build`.
+No runtime dependencies. MIT licensed.
 
-Requires Node 20 or later. Ships as ESM; `require()` also works on Node
-versions that support `require(esm)` (20.19+, 22.12+). No runtime
-dependencies.
+It is an ESM package (`"type": "module"`). `import` is the supported way to
+load it. `require()` also works where Node can `require(esm)`:
+
+| How you load it | Node 20.19+ | Node 22.12+ | Node 24 and 26 | Older Node 20 or 22 |
+| --- | --- | --- | --- | --- |
+| `import { assertInvariance } from "mutation-invariance-kit"` | works | works | works | works |
+| `require("mutation-invariance-kit")` or `require("mutation-invariance-kit/presets")` | works | works | works | fails (no `require(esm)`); use `import()` |
+
+ESM package; `require()` works on Node >=20.19 / >=22.12. Recommended runtimes
+are Node 22 and 24 (LTS) and Node 26 (current). Node 20 is end-of-life. CI
+still runs the tests and the installed-package checks on Node 20.19.0 and
+22.12.0 (the `require(esm)` floors) to catch regressions, but that is
+compatibility testing, not a recommendation. `engines` in `package.json` is
+`>=20`. TypeScript resolves the root and `/presets` under `node10`,
+`node16`/`nodenext` and `bundler` resolution (checked by `attw` in CI).
 
 ## Quickstart
 
@@ -133,11 +146,14 @@ Options:
   when `fn` touches external state that must be reset between calls. Must be
   synchronous.
 
+`opts` must be a plain object (or omitted), and each hook must be a function
+or undefined; each is read once.
+
 It throws instead of returning a result when the run cannot be trusted:
 
 | Situation | What happens |
 | --- | --- |
-| `scenarios` is not an array, is empty, or has an entry without a string `name` and a `mutate` function; `fn` is not a function | `TypeError` or `Error` before `fn` runs |
+| `scenarios` is not an array, is empty, has a hole (a sparse array), or has an entry without a string `name` and a `mutate` function; `fn` is not a function; `opts` is not a plain object or a hook is not a function | `TypeError` or `Error` before `fn` runs |
 | `fn` throws (baseline or mutated input) | `Error` naming the scenario, original error as `cause`. Never counted as "no difference". |
 | `mutate` throws | `Error` naming the scenario, original error as `cause` |
 | `fn` or `mutate` returns a Promise | `TypeError` |
@@ -146,11 +162,20 @@ It throws instead of returning a result when the run cannot be trusted:
 | `fn` or `mutate` modified `baseInput` in place | `Error` naming who did it |
 | a later `fn` call modified the object `fn` returned for the baseline | `Error` naming the scenario |
 
+`scenarios` is validated with one indexed pass before anything runs; each
+scenario's `name`, `mutate` and `category` are read once, and the run uses
+exactly the scenarios that were checked (an overridden `Symbol.iterator` on
+the array does not matter). Scenario names and thrown messages are escaped
+in error text (newlines, control and bidi characters).
+
 In-place changes are found by comparing against a deep copy taken before the
-first call. The copy covers plain objects, class instances, arrays, `Map`,
-`Set`, `Date`, `RegExp`, `ArrayBuffer`, and typed arrays. Changes inside values
-it keeps by reference (functions, `Error`, `Promise`, private `#fields`, and
-other opaque objects) are not detected.
+first call. The copy covers plain objects, class instances, `arguments`
+objects, arrays, `Map`, `Set`, `Date`, `RegExp`, `ArrayBuffer`, and typed
+arrays, including the extra own properties `deepEqual` compares (such as a
+`label` on a typed array). Changes inside values it keeps by reference
+(functions, `Error`, boxed primitives, `DataView`, `SharedArrayBuffer`,
+`Promise`, private `#fields`, and other values `deepEqual` cannot inspect)
+are not detected.
 
 The library never writes to `baseInput` or to anything `fn` returns, and never
 clones the values it passes to your code. It uses no randomness and no clock.
@@ -169,14 +194,28 @@ says they are different.
   `message`, `cause`, and `errors`.
 - Arrays compare length, elements and extra keys; a hole is not `undefined`.
 - `Map`, `Set`, `Date` (invalid dates equal each other), `RegExp`, boxed
-  primitives, `ArrayBuffer`, `DataView`, and typed arrays compare by content.
-  Object `Set` members and `Map` keys are matched by structure, one-to-one;
-  that matching is quadratic in the number of object members.
+  primitives, `arguments` objects, `ArrayBuffer`, `SharedArrayBuffer`,
+  `DataView`, and typed arrays compare by content, plus their own enumerable
+  properties (a `score` attached to an `ArrayBuffer` counts). Object `Set`
+  members and `Map` keys are matched by structure, one-to-one; that matching
+  is quadratic in the number of object members.
+- Built-ins are recognized by brand checks and read through the built-in
+  operations, so a masked `Symbol.toStringTag`, a replaced prototype, or an
+  overridden `getTime`, `valueOf`, `size`, iterator, `byteLength` or
+  `length` cannot hide a difference.
 - Circular references are handled.
-- Functions, `Promise`, `WeakMap`, `WeakSet`, `URL`, and any object that sets
-  its own `Symbol.toStringTag` without being one of the built-ins above (some
-  decimal and date libraries do) are equal only to themselves. Compare those
-  with a custom `isEqual`.
+- Not comparable, so equal only to themselves: functions, `Promise`,
+  `WeakMap`, `WeakSet`, `WeakRef`, `URL`, any object with its own or an
+  inherited string `Symbol.toStringTag` that is not one of the built-ins
+  above (some decimal and date libraries), a built-in's prototype object
+  itself (`Date.prototype`), anything that inherits from a built-in's
+  prototype without being that built-in (a `Proxy` around a `Map`), and a
+  `DataView` whose buffer was detached. Compare those with a
+  custom `isEqual`. One known gap: a `Promise` whose prototype was replaced
+  is compared as an ordinary object, because there is no side-effect-free
+  way to recognize one.
+- It never mutates its arguments. An error thrown by a getter or `Proxy`
+  trap it reads propagates.
 
 ### Presets
 
@@ -209,10 +248,11 @@ function priceScenarios<Input>(/* same, number values */): MutationScenario<Inpu
 - A value equal to the input's current value produces a vacuous scenario.
 - An empty value list returns `[]` (and `assertInvariance` refuses to run with
   no scenarios).
-- Throws a `TypeError` if `get` or `set` is not a function, or a value has the
-  wrong type (geography and protected-attribute values must be strings, so a
-  zip's leading zero is kept; prices must be numbers, and any number is
-  accepted, including `NaN` and `Infinity`).
+- Throws a `TypeError` if `get` or `set` is not a function, the value list
+  has a hole, a value has the wrong type (geography and protected-attribute
+  values must be strings, so a zip's leading zero is kept; prices must be
+  numbers, and any number is accepted, including `NaN` and `Infinity`), or
+  `opts` is not a plain object whose `fieldLabel` is a non-blank string.
 
 The kit ships no default values. Choosing names, zip codes, or prices that are
 genuinely adversarial for your domain is your job.
@@ -366,12 +406,16 @@ part of `npm test`.
   That can produce failures you need to handle with `isEqual`; it should not
   produce false passes, but a custom `isEqual` or `hasChanged` can.
 - **In-place change detection has blind spots:** values kept by reference
-  (functions, `Error`, `Promise`, private fields) are not deep-copied.
+  (functions, `Error`, boxed primitives, `DataView`, `SharedArrayBuffer`,
+  `Promise`, private fields) are not deep-copied.
 - **It trusts your getters and setters.** The preset check confirms the value
   landed where `get` reads it; it cannot tell whether `get` reads the field you
   meant.
 - **Cost:** every run deep-copies `baseInput` and the baseline output and
-  compares them after each call. Performance has not been benchmarked.
+  compares them after each call. `deepEqual` checks each object's brand once
+  and caches it; that first check costs about 15 to 25 microseconds per
+  object (Node 26 on an Apple-silicon laptop, measured on 40,000 fresh
+  objects). Nothing else has been benchmarked.
 - **It is a regression test, not an audit.** Re-run it in CI whenever the
   function changes, and use it alongside domain expertise, not instead of it.
 
@@ -381,8 +425,10 @@ part of `npm test`.
 applies the same idea to one axis: whether a ranking depends on which option
 pays the operator more. It also has a static check, `assertNoPayoutImports`.
 Use it for that axis; use this kit for any other "should not depend on X"
-claim. The scenario shape (`name` plus `mutate`) is the same in both. The two
-packages share no code.
+claim. The scenario shape (`name` plus `mutate`) is the same in both. Neither
+package depends on the other; each ships its own copy of the same comparator
+and snapshot source (`src/deepEqual.ts` and `src/snapshot.ts` are kept
+byte-identical), so `deepEqual` behaves the same in both.
 
 ## License
 

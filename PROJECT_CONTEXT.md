@@ -5,7 +5,7 @@ Mapped on **2026-09-26** from connected GitHub, Vercel, and Supabase metadata. T
 ## Identity and repository settings
 
 - Repository: [lkopietz3-byte/mutation-invariance-kit](https://github.com/lkopietz3-byte/mutation-invariance-kit)
-- Purpose: A library for testing whether a decision, score, or ranking changes when a claimed-irrelevant input is changed.
+- Purpose: A library for testing whether a decision, score, or ranking changes when a claimed-irrelevant input is changed, in the scenarios you supply. A pass covers only those scenarios.
 - GitHub visibility: **public**; default branch: **`main`**; archived: **no**.
 - Product stage, owner, production health, and GitHub protection/settings beyond the fields above: **not verified**.
 
