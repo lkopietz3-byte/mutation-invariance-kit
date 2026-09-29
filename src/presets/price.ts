@@ -35,16 +35,25 @@ export interface PriceScenariosOptions {
  * `substitutionValues` are the replacement prices to try. Any number is
  * accepted, including `0`, negatives, `NaN`, and `Infinity`; pick boundary and
  * adversarial values, not one easy case. The kit chooses none for you. An
- * empty list returns no scenarios. Throws a TypeError if `get` or `set` is not
- * a function or `substitutionValues` is not an array of numbers.
+ * empty list returns no scenarios. Throws a TypeError if `get` or `set` is not a function,
+ * `substitutionValues` is not a dense array of numbers (a hole in a
+ * sparse array is rejected), or `opts` is not a plain object whose
+ * `fieldLabel` is a non-blank string or undefined.
  */
 export function priceScenarios<Input>(
   get: (input: Input) => number,
   set: (input: Input, value: number) => Input,
   substitutionValues: number[],
-  opts: PriceScenariosOptions = {},
+  opts?: PriceScenariosOptions,
 ): MutationScenario<Input>[] {
-  validatePresetArguments("priceScenarios", get, set, substitutionValues, "number");
-  const label = opts.fieldLabel ?? "price";
-  return getSetScenarios("price", label, get, set, substitutionValues, (v) => (Object.is(v, -0) ? "-0" : String(v)));
+  const { values, label } = validatePresetArguments<number>(
+    "priceScenarios",
+    get,
+    set,
+    substitutionValues,
+    "number",
+    opts,
+    "price",
+  );
+  return getSetScenarios("price", label, get, set, values, (v) => (Object.is(v, -0) ? "-0" : String(v)));
 }

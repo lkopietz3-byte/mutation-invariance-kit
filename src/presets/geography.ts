@@ -34,16 +34,25 @@ export interface GeographyScenariosOptions {
  *
  * `substitutionValues` are the replacement zip/region codes to try. The kit
  * ships no default list; choosing them is the caller's job. An empty list
- * returns no scenarios. Throws a TypeError if `get` or `set` is not a
- * function or `substitutionValues` is not an array of strings.
+ * returns no scenarios. Throws a TypeError if `get` or `set` is not a function,
+ * `substitutionValues` is not a dense array of strings (a hole in a
+ * sparse array is rejected), or `opts` is not a plain object whose
+ * `fieldLabel` is a non-blank string or undefined.
  */
 export function geographyScenarios<Input>(
   get: (input: Input) => string,
   set: (input: Input, value: string) => Input,
   substitutionValues: string[],
-  opts: GeographyScenariosOptions = {},
+  opts?: GeographyScenariosOptions,
 ): MutationScenario<Input>[] {
-  validatePresetArguments("geographyScenarios", get, set, substitutionValues, "string");
-  const label = opts.fieldLabel ?? "geography";
-  return getSetScenarios("geography", label, get, set, substitutionValues, (v) => JSON.stringify(v));
+  const { values, label } = validatePresetArguments<string>(
+    "geographyScenarios",
+    get,
+    set,
+    substitutionValues,
+    "string",
+    opts,
+    "geography",
+  );
+  return getSetScenarios("geography", label, get, set, values, (v) => JSON.stringify(v));
 }
