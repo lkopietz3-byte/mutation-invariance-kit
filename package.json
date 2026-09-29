@@ -1,6 +1,6 @@
 {
   "name": "mutation-invariance-kit",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Check whether a decision, score, or ranking function's output changes when you mutate an input it should ignore, such as a name, zip code, or price.",
   "keywords": [
     "invariance",
@@ -39,6 +39,13 @@
       "default": "./dist/presets/index.js"
     }
   },
+  "typesVersions": {
+    "*": {
+      "presets": [
+        "./dist/presets/index.d.ts"
+      ]
+    }
+  },
   "sideEffects": false,
   "files": [
     "dist",
@@ -57,7 +64,7 @@
     "lint": "eslint . --max-warnings=0",
     "audit:dependencies": "npm audit --package-lock-only --include=dev --ignore-scripts --audit-level=low",
     "verify:package": "node scripts/verify-package.mjs",
-    "attw": "attw --pack . --ignore-rules cjs-resolves-to-esm --profile node16",
+    "attw": "attw --pack . --ignore-rules cjs-resolves-to-esm",
     "verify": "npm run lint && npm run typecheck && npm test && npm run build && npm run verify:package",
     "prepublishOnly": "npm run verify"
   },
