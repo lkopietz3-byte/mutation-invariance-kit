@@ -34,18 +34,27 @@ export interface ProtectedAttributeScenariosOptions {
  * `substitutionValues` are the replacement values to try (alternate names,
  * name-coded signals, age-coded details, ...). The kit ships no default list;
  * choosing genuinely adversarial values is the caller's job. An empty list
- * returns no scenarios. Throws a TypeError if `get` or `set` is not a function
- * or `substitutionValues` is not an array of strings.
+ * returns no scenarios. Throws a TypeError if `get` or `set` is not a function,
+ * `substitutionValues` is not a dense array of strings (a hole in a sparse
+ * array is rejected), or `opts` is not a plain object whose `fieldLabel` is
+ * a non-blank string or undefined.
  */
 export function protectedAttributeScenarios<Input>(
   get: (input: Input) => string,
   set: (input: Input, value: string) => Input,
   substitutionValues: string[],
-  opts: ProtectedAttributeScenariosOptions = {},
+  opts?: ProtectedAttributeScenariosOptions,
 ): MutationScenario<Input>[] {
-  validatePresetArguments("protectedAttributeScenarios", get, set, substitutionValues, "string");
-  const label = opts.fieldLabel ?? "protected attribute";
-  return getSetScenarios("protected-attribute", label, get, set, substitutionValues, (v) =>
+  const { values, label } = validatePresetArguments<string>(
+    "protectedAttributeScenarios",
+    get,
+    set,
+    substitutionValues,
+    "string",
+    opts,
+    "protected attribute",
+  );
+  return getSetScenarios("protected-attribute", label, get, set, values, (v) =>
     JSON.stringify(v),
   );
 }

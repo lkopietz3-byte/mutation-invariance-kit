@@ -62,7 +62,7 @@ assert.throws(
 );
 assert.throws(
   () => assertInvariance((a) => { if (a.name !== base.name) throw new Error('boom'); return 1; }, base, names),
-  (error) => error.message.includes('scenario "protected attribute -> "Wei Chen""') && error.cause.message === 'boom',
+  (error) => error.message.includes('scenario "protected attribute -> \\"Wei Chen\\""') && error.cause.message === 'boom',
 );
 assert.throws(() => priceScenarios((l) => l.price, (l, v) => ({ ...l, price: v }), ['9.99']), TypeError);
 
@@ -71,5 +71,19 @@ assert.equal(deepEqual({ score: NaN }, { score: NaN }), true);
 assert.equal(deepEqual(0, -0), false);
 assert.equal(deepEqual(new Set([{ a: 1 }, { a: 1 }]), new Set([{ a: 1 }, { a: 2 }])), false);
 assert.equal(deepEqual(new Error('a'), new Error('b')), false);
+
+// 0.2.0: brand checks, metadata, dense scenarios.
+class FrozenDate extends Date {
+  getTime() {
+    return 0;
+  }
+}
+assert.equal(deepEqual(new FrozenDate(1), new FrozenDate(2)), false);
+assert.equal(deepEqual(Object.assign(new DataView(new ArrayBuffer(1)), { score: 0 }), Object.assign(new DataView(new ArrayBuffer(1)), { score: 1 })), false);
+const overridden = [{ name: 'x changes', mutate: (input) => ({ ...input, x: 1 }) }];
+Object.defineProperty(overridden, Symbol.iterator, { value: function* () {} });
+assert.equal(assertInvariance((input) => input.x, { x: 0 }, overridden).passed, false);
+assert.throws(() => assertInvariance((x) => x, 1, new Array(1)), TypeError);
+assert.throws(() => geographyScenarios((l) => l.zip, (l, zip) => ({ ...l, zip }), new Array(1)), TypeError);
 
 console.log('consumer probe passed');

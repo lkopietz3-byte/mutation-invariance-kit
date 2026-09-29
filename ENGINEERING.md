@@ -4,14 +4,21 @@
 
 1. `assertInvariance` returns `passed: true` only if every scenario changed the
    input and every changed input produced an output equal to the baseline.
-2. A run that cannot be trusted throws instead of returning a result: empty or
-   malformed scenarios, `fn`/`mutate` throwing or returning a Promise,
+2. A run that cannot be trusted throws instead of returning a result: empty,
+   sparse or malformed scenarios, `opts` that is not a plain object or has
+   non-function hooks, `fn`/`mutate` throwing or returning a Promise,
    non-boolean comparator results, an async `cleanup`, or in-place changes to
-   `baseInput` or the baseline output.
+   `baseInput` or the baseline output. Scenarios are validated with one
+   indexed pass and the run uses only that snapshot; `opts` is read once.
 3. The library never writes to caller values and uses no randomness or clock.
+   Caller text in error messages is escaped.
 4. `deepEqual` fails closed: values it cannot inspect are equal only to
-   themselves. Built-ins are recognized by brand checks, not
-   `Symbol.toStringTag`.
+   themselves. Built-ins are recognized by intrinsic brand checks and their
+   content (including own enumerable metadata on buffers and views) is read
+   through intrinsics, never through `Symbol.toStringTag` or the value's own
+   methods. The internal snapshot copies everything `deepEqual` compares for
+   the kinds it copies. `src/deepEqual.ts` and `src/snapshot.ts` are
+   byte-identical to payout-invariance-kit's copies.
 5. No path-string parsing; no caller-supplied key is used to write into an
    object. The internal snapshot writes keys with `Object.defineProperty`.
 6. Zero runtime dependencies (`dependencies` stays empty).
@@ -32,24 +39,31 @@ under strict NodeNext.
 Tests live next to the code (`src/*.test.ts`) and in `examples/`. Every bug
 fix has a regression test that failed on the code before the fix.
 
-`deepEqual` was differentially fuzzed against `node:util`'s
-`isDeepStrictEqual` (about 1.4M seeded pairs, no disagreements). The fuzz
-script is not in the repo; the generator did not include objects with a custom
-`Symbol.toStringTag`, where this kit is deliberately stricter than Node.
+`src/deepEqual.differential.test.ts` fuzzes `deepEqual` against `node:util`'s
+`isDeepStrictEqual` (imported in the test only) on 6,000 seeded pairs, plus a
+construction oracle that knows whether each pair differs. Ordinary values agree
+exactly; with hostile values (masked tags, overridden methods, proxies, custom
+tags) every divergence is in the fail-closed direction, and each kind is
+documented in the test.
 
 ## Not certified
 
 - A pass is evidence for the scenarios run, not proof of independence.
 - Not a fairness audit, legal compliance evidence, or a security control.
-- Performance is not benchmarked. Each run deep-copies `baseInput` and the
-  baseline output; object `Set`/`Map` matching in `deepEqual` is quadratic.
+- Performance is measured only roughly. Each run deep-copies `baseInput` and
+  the baseline output. `deepEqual` brand-checks each object once (about 15 to
+  25 microseconds per new object on Node 26, measured on 40,000 objects) and
+  caches the result; object `Set`/`Map` matching is quadratic.
 - In-place change detection does not see inside values kept by reference
-  (functions, `Error`, `Promise`, private fields).
+  (functions, `Error`, boxed primitives, `DataView`, `SharedArrayBuffer`,
+  `Promise`, private fields).
+- A `Promise` whose prototype was replaced is compared as an ordinary object;
+  there is no side-effect-free brand check for promises.
 
 ## Are the types wrong? (attw)
 
 CI runs [`arethetypeswrong`](https://github.com/arethetypeswrong/arethetypeswrong.github.io)
-(`npm run attw`, which is `attw --pack . --ignore-rules cjs-resolves-to-esm --profile node16`)
+(`npm run attw`, which is `attw --pack . --ignore-rules cjs-resolves-to-esm`)
 against the packed tarball after the build step. The `cjs-resolves-to-esm` rule is ignored on
 purpose: this is an ESM-only package (`"type": "module"`, no `require` entry point), so a
 CommonJS consumer must use Node's `require(esm)` support (Node >=20.19 or >=22.12 — see
@@ -58,7 +72,7 @@ rejected to avoid the dual-package hazard (two separately-identified copies of t
 with broken `instanceof` checks and duplicated module state across the CJS and ESM entry
 points).
 
-`attw`'s strict Node 10 resolution check currently fails for this package's `./presets` subpath export because there is no `typesVersions` fallback for a CommonJS-style (`moduleResolution: node`) resolver. CI runs with `--profile node16` to stay green while that's true. Fixing it needs a `typesVersions` entry in `package.json`, which ships in the npm tarball — out of scope for this repo-hygiene pass; it is planned for the per-kit follow-up pass.
+`package.json` has a `typesVersions` entry for `./presets`, so TypeScript's `node10` resolution finds its declarations too, and `attw` checks every resolution mode (no `--profile` flag).
 
 ## Release and rollback
 
@@ -66,8 +80,11 @@ points).
 publish via the `prepublishOnly` script, so a broken build cannot reach the registry by
 accident. To release: add a dated entry to `CHANGELOG.md`, bump `version` in
 `package.json`, commit, and push a `vX.Y.Z` tag that matches the new version, then let
-`.github/workflows/release.yml` install, verify, and publish it. (You can also run
-`npm publish` locally; `prepublishOnly` still guards it.)
+`.github/workflows/release.yml` publish it. The workflow runs only on a `v*` tag whose
+version matches `package.json` (a manual dispatch from a branch fails), and runs the
+dependency audit, `npm run verify` and `npm run attw` before publishing. Only a confirmed
+E404 from the registry counts as "not published yet"; any other registry error fails the
+job. (You can also run `npm publish` locally; `prepublishOnly` still guards it.)
 
 npm's unpublish policy is deliberately narrow. Within 72 hours of publishing, a version can be
 unpublished only if no other published package depends on it. After 72 hours, unpublishing also
@@ -88,7 +105,8 @@ This is a dev-time library with no stored state, so there is nothing else to rol
   regressions, but that runtime gets no security fixes upstream; don't run production traffic
   on it.
 - CommonJS `require()` of this package needs Node >=20.19 or >=22.12 (`require(esm)`
-  support). ESM `import` works on every version this package tests (20, 22, 24).
+  support). The `compat` job pins exactly 20.19.0 and 22.12.0 (plus the latest 20, 22 and
+  24) and runs the tests and the installed-package checks.
 - `engines` in `package.json` is unchanged by this policy.
 
 ### Publishing with provenance

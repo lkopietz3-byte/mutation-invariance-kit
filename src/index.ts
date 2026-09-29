@@ -16,6 +16,7 @@
  */
 
 import { deepEqual } from "./deepEqual.js";
+import { describeError, hasOwn, isPlainRecord, quote } from "./internal.js";
 import { snapshot } from "./snapshot.js";
 import type { InvarianceResult, MutationScenario } from "./types.js";
 
@@ -80,37 +81,56 @@ function isThenable(value: unknown): boolean {
   );
 }
 
-function describeError(error: unknown): string {
-  try {
-    return error instanceof Error ? error.message : String(error);
-  } catch {
-    return "(unprintable thrown value)";
-  }
-}
-
-function validateScenarios<Input>(scenarios: unknown): MutationScenario<Input>[] {
+/**
+ * Validate `scenarios` with one indexed pass (holes rejected, inherited
+ * elements ignored), reading each scenario's `name`, `mutate` and
+ * `category` exactly once, and return that snapshot. The run uses only this
+ * snapshot, so what was validated is exactly what runs, whatever the
+ * array's iterator or the scenario's getters do later.
+ */
+function snapshotScenarios<Input>(scenarios: unknown): MutationScenario<Input>[] {
   if (!Array.isArray(scenarios)) {
     throw new TypeError("assertInvariance: scenarios must be an array of { name, mutate } objects.");
   }
-  if (scenarios.length === 0) {
+  const length = scenarios.length;
+  if (length === 0) {
     throw new Error(
       "assertInvariance: scenarios is empty, so nothing would be tested. Pass at least one scenario.",
     );
   }
-  scenarios.forEach((scenario: unknown, index) => {
-    const candidate = scenario as Partial<MutationScenario<Input>> | null;
-    if (
-      typeof candidate !== "object" ||
-      candidate === null ||
-      typeof candidate.name !== "string" ||
-      typeof candidate.mutate !== "function"
-    ) {
+  const list: MutationScenario<Input>[] = [];
+  for (let index = 0; index < length; index += 1) {
+    if (!hasOwn(scenarios, index)) {
+      throw new TypeError(`assertInvariance: scenarios[${index}] is missing (a hole in a sparse array). Pass a dense array.`);
+    }
+    const candidate: unknown = scenarios[index];
+    const isObject = typeof candidate === "object" && candidate !== null;
+    const name: unknown = isObject ? Reflect.get(candidate, "name") : undefined;
+    const mutate: unknown = isObject ? Reflect.get(candidate, "mutate") : undefined;
+    if (typeof name !== "string" || typeof mutate !== "function") {
       throw new TypeError(
         `assertInvariance: scenarios[${index}] must be an object with a string "name" and a "mutate" function.`,
       );
     }
-  });
-  return [...(scenarios as MutationScenario<Input>[])];
+    const category = Reflect.get(candidate as object, "category") as MutationScenario<Input>["category"];
+    list.push({ name, mutate: mutate as (input: Input) => Input, category });
+  }
+  return list;
+}
+
+type Hook = ((...args: never[]) => unknown) | undefined;
+
+/** Read `opts` once: undefined or a plain object whose hooks are functions or undefined. */
+function readOptions(opts: unknown): { isEqual: Hook; hasChanged: Hook; cleanup: Hook } {
+  if (opts === undefined) return { isEqual: undefined, hasChanged: undefined, cleanup: undefined };
+  if (!isPlainRecord(opts)) throw new TypeError("assertInvariance: opts must be a plain object (or omitted).");
+  const hooks = { isEqual: opts.isEqual, hasChanged: opts.hasChanged, cleanup: opts.cleanup };
+  for (const [hook, value] of Object.entries(hooks)) {
+    if (value !== undefined && typeof value !== "function") {
+      throw new TypeError(`assertInvariance: opts.${hook} must be a function (or omitted).`);
+    }
+  }
+  return hooks as { isEqual: Hook; hasChanged: Hook; cleanup: Hook };
 }
 
 /**
@@ -124,12 +144,21 @@ function validateScenarios<Input>(scenarios: unknown): MutationScenario<Input>[]
  * field. `fn` runs once for the baseline and once per non-vacuous scenario, in
  * scenario order; each scenario's `mutate` runs once.
  *
+ * `scenarios` is validated and copied with one indexed pass before anything
+ * runs: each scenario's `name`, `mutate` and `category` are read once, and
+ * the run uses only that copy, so the scenarios that were checked are exactly
+ * the scenarios that run. `opts` is read once too.
+ *
  * Throws, rather than returning a result, when the run cannot be trusted:
- * - `scenarios` is not a non-empty array of `{ name, mutate }` (checked before
- *   anything runs, so `fn` is never called on a bad call).
+ * - `fn` is not a function, `scenarios` is not a non-empty, dense array of
+ *   `{ name, mutate }` (a hole in a sparse array is rejected), or `opts` is
+ *   not a plain object whose hooks are functions or undefined (all checked
+ *   before anything runs, so `fn` is never called on a bad call).
  * - `fn` throws on the baseline or on a mutated input. The error names the
  *   scenario and keeps the original as `cause`; a throw on a mutated input is
  *   never counted as "no difference".
+ *   Scenario names and thrown messages are escaped in the text (newlines,
+ *   control and bidi characters), so they cannot fake extra lines of output.
  * - `mutate` throws.
  * - `fn` or `mutate` returns a Promise (or any thenable). This function is
  *   synchronous; see README.md for how to check an async function.
@@ -151,14 +180,18 @@ export function assertInvariance<Input, Output>(
   fn: (input: Input) => Output,
   baseInput: Input,
   scenarios: MutationScenario<Input>[],
-  opts: AssertInvarianceOptions<Input, Output> = {},
+  opts?: AssertInvarianceOptions<Input, Output>,
 ): InvarianceResult<Input, Output> {
   if (typeof fn !== "function") {
     throw new TypeError("assertInvariance: fn must be a function.");
   }
-  const list = validateScenarios<Input>(scenarios);
-  const isEqual = opts.isEqual ?? deepEqual;
-  const hasChanged = opts.hasChanged ?? ((base, mutated) => !deepEqual(base, mutated));
+  const list = snapshotScenarios<Input>(scenarios);
+  const options = readOptions(opts);
+  const isEqual = (options.isEqual as ((expected: Output, actual: Output) => unknown) | undefined) ?? deepEqual;
+  const hasChanged =
+    (options.hasChanged as ((base: Input, mutated: Input) => unknown) | undefined) ??
+    ((base: Input, mutated: Input) => !deepEqual(base, mutated));
+  const cleanup = options.cleanup;
 
   const pristine = snapshot(baseInput);
   const assertBaseUntouched = (who: string): void => {
@@ -183,7 +216,7 @@ export function assertInvariance<Input, Output>(
     }
     let cleanupNote = "";
     try {
-      if (isThenable(opts.cleanup?.())) {
+      if (isThenable(cleanup?.())) {
         throw new TypeError("cleanup() returned a Promise (or thenable); cleanup must be synchronous.");
       }
     } catch (cleanupError) {
@@ -230,38 +263,39 @@ export function assertInvariance<Input, Output>(
   const vacuous: string[] = [];
 
   for (const { name, mutate, category } of list) {
+    const label = `scenario ${quote(name)}`;
     let mutatedInput: Input;
     try {
       mutatedInput = mutate(baseInput);
     } catch (error) {
-      throw new Error(`assertInvariance: scenario "${name}": mutate() threw: ${describeError(error)}`, {
+      throw new Error(`assertInvariance: ${label}: mutate() threw: ${describeError(error)}`, {
         cause: error,
       });
     }
     if (isThenable(mutatedInput)) {
       throw new TypeError(
-        `assertInvariance: scenario "${name}": mutate() returned a Promise (or thenable). mutate must be synchronous.`,
+        `assertInvariance: ${label}: mutate() returned a Promise (or thenable). mutate must be synchronous.`,
       );
     }
-    assertBaseUntouched(`scenario "${name}": mutate()`);
+    assertBaseUntouched(`${label}: mutate()`);
 
     // Precondition guard: a mutation that changed nothing can't prove
     // invariance. Flag it instead of letting it silently count as a pass.
-    if (!checkedBoolean("hasChanged", `for scenario "${name}"`, hasChanged(baseInput, mutatedInput))) {
+    if (!checkedBoolean("hasChanged", `for ${label}`, hasChanged(baseInput, mutatedInput))) {
       vacuous.push(name);
       continue;
     }
 
-    const actual = callFn(mutatedInput, `on the mutated input for scenario "${name}" (it did not throw on the baseline input)`);
-    assertBaseUntouched(`scenario "${name}": fn`);
+    const actual = callFn(mutatedInput, `on the mutated input for ${label} (it did not throw on the baseline input)`);
+    assertBaseUntouched(`${label}: fn`);
     if (!deepEqual(baselineCopy, baseline)) {
       throw new Error(
-        `assertInvariance: fn modified its earlier (baseline) output in place during scenario "${name}". ` +
+        `assertInvariance: fn modified its earlier (baseline) output in place during ${label}. ` +
           `Return a fresh value from every call, or the baseline can no longer be compared.`,
       );
     }
 
-    if (!checkedBoolean("isEqual", `for scenario "${name}"`, isEqual(baseline, actual))) {
+    if (!checkedBoolean("isEqual", `for ${label}`, isEqual(baseline, actual))) {
       failures.push({ scenario: name, category, mutatedInput, expected: baseline, actual });
     }
   }

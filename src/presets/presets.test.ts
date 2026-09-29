@@ -171,7 +171,7 @@ describe("preset boundaries and error paths", () => {
   it("rejects a setter that writes into the input instead of returning a copy (via assertInvariance)", () => {
     const scenarios = geographyScenarios(getZip, (l: Listing, value) => Object.assign(l, { zip: value }), ["90210"]);
     expect(() => assertInvariance((l: Listing) => l.price, { ...base }, scenarios)).toThrow(
-      /scenario "geography -> "90210"": mutate\(\) modified baseInput in place/,
+      /scenario "geography -> \\"90210\\"": mutate\(\) modified baseInput in place/,
     );
   });
 });
