@@ -270,3 +270,43 @@ describe("remaining branches (tests audit)", () => {
     }
   });
 });
+
+describe("mutation-testing survivors (index.ts, internal.ts)", () => {
+  const fn = (input: Input): number => input.x;
+
+  it("rejects a class instance as opts", () => {
+    class Options {
+      cleanup = (): void => undefined;
+    }
+    expect(() => assertInvariance(fn, { x: 0 }, [bumpX], new Options() as never)).toThrow(/opts must be a plain object/);
+    expect(() => geographyScenarios((r: { z: string }) => r.z, (r, z) => ({ ...r, z }), ["1"], new Options() as never)).toThrow(
+      /opts must be a plain object/,
+    );
+  });
+
+  it("escapes quotes and backslashes inside a quoted scenario name", () => {
+    const named = {
+      name: 'say "hi" \\ bye',
+      mutate: (): Input => {
+        throw new Error("x");
+      },
+    };
+    expect(() => assertInvariance(fn, { x: 0 }, [named])).toThrow(String.raw`scenario "say \"hi\" \\ bye": mutate() threw: x`);
+  });
+
+  it("gives exact messages for a Promise-returning hook and a thrown non-Error", () => {
+    expect(() => assertInvariance(fn, { x: 0 }, [bumpX], { isEqual: () => Promise.resolve(true) as never })).toThrow(
+      'assertInvariance: isEqual must return a boolean, got a Promise (or thenable) for scenario "x changes".',
+    );
+    expect(() =>
+      assertInvariance(
+        () => {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error -- a non-Error thrown value is the case under test
+          throw "tab\there";
+        },
+        { x: 0 },
+        [bumpX],
+      ),
+    ).toThrow(String.raw`assertInvariance: fn threw on the baseline input: tab\there`);
+  });
+});
