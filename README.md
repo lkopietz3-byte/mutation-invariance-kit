@@ -261,28 +261,76 @@ Also exported as types: `AssertInvarianceOptions`,
 
 ### Async functions
 
-`assertInvariance` is synchronous. For an async function, build the mutated
-inputs once, await each output yourself, and hand it a synchronous lookup:
+`assertInvariance` is synchronous, and there is no general async version.
+The recipe below covers one narrow shape: an async scorer that resolves to a
+number, on plain-data input. It keeps the library's guards where they
+matter:
+
+- `assertInvariance` itself validates the scenarios, runs each `mutate`
+  once, rejects an in-place edit or a Promise from `mutate`, and flags
+  vacuous scenarios, all before the scorer is awaited even once.
+- The scorer must resolve to a number. A number cannot be edited or reused
+  later, so a scorer that keeps returning one shared object is rejected
+  instead of making every result look the same.
+- A copy of `baseInput` taken before the first call catches a scorer that
+  edits it in place.
+
+What it does not do: it does not support other output types (score to a
+number, or adapt the recipe with an immediate copy of your output), it does
+not accept inputs `structuredClone` cannot copy faithfully (class instances,
+functions), it awaits calls one at a time, and a rejected call propagates
+as-is without naming the scenario. It cannot see side effects outside
+`baseInput` (a cache, a database row).
 
 ```ts
-async function assertAsyncInvariance<Input, Output>(
-  fn: (input: Input) => Promise<Output>,
+import { assertInvariance, deepEqual } from "mutation-invariance-kit";
+import type { InvarianceResult, MutationScenario } from "mutation-invariance-kit";
+
+/**
+ * Check an async scorer that resolves to a number.
+ *
+ * Limits: `baseInput` must be structured-clonable plain data (objects,
+ * arrays, strings, numbers, booleans, null); the scorer must resolve to a
+ * number; calls are awaited one at a time; a rejected call propagates as-is.
+ */
+async function assertAsyncScoreInvariance<Input>(
+  score: (input: Input) => Promise<number>,
   baseInput: Input,
   scenarios: MutationScenario<Input>[],
-) {
-  const mutatedInputs = scenarios.map((s) => s.mutate(baseInput));
-  const outputs = new Map<Input, Output>();
-  for (const input of [baseInput, ...mutatedInputs]) outputs.set(input, await fn(input));
-  return assertInvariance(
-    (input: Input) => outputs.get(input) as Output,
-    baseInput,
-    scenarios.map((s, i) => ({ ...s, mutate: () => mutatedInputs[i] as Input })),
-  );
+): Promise<InvarianceResult<Input, number>> {
+  // A copy taken before any call, to catch a scorer that edits baseInput.
+  const pristine = structuredClone(baseInput);
+
+  // Synchronous pass: assertInvariance validates the scenarios, runs each
+  // mutate once, rejects in-place edits and Promises from mutate, and flags
+  // vacuous scenarios. Each call returns a distinct number, so every
+  // non-vacuous scenario comes back as a "failure" carrying its input.
+  let calls = 0;
+  const plan = assertInvariance(() => calls++, baseInput, scenarios);
+
+  // Async pass: await one call at a time. A number cannot be edited or
+  // reused later, so what is recorded is what the scorer returned.
+  const scoreOf = async (input: Input): Promise<number> => {
+    const value: unknown = await score(input);
+    if (typeof value !== "number") throw new TypeError("score must resolve to a number.");
+    return value;
+  };
+
+  const baseline = await scoreOf(baseInput);
+  const failures: InvarianceResult<Input, number>["failures"] = [];
+  for (const { scenario, category, mutatedInput } of plan.failures) {
+    const actual = await scoreOf(mutatedInput);
+    if (!Object.is(actual, baseline)) failures.push({ scenario, category, mutatedInput, expected: baseline, actual });
+  }
+  if (!deepEqual(pristine, baseInput)) throw new Error("score modified baseInput in place.");
+
+  return { passed: failures.length === 0 && plan.vacuous.length === 0, baseline, failures, vacuous: plan.vacuous };
 }
 ```
 
-`examples/async-scoring.test.ts` runs this against an honest and a biased
-async scorer.
+`examples/async-scoring.test.ts` runs this exact code (a test checks that the
+README copy matches) against an honest scorer, a biased one, one that returns
+a shared object, and ones that edit `baseInput`.
 
 ### Randomness
 
@@ -301,7 +349,7 @@ part of `npm test`.
   zip-biased engine the check catches.
 - `toy-ad-delivery.test.ts`: price, with a margin-favoring engine and the
   array-item getter/setter pattern.
-- `async-scoring.test.ts`: the async pattern above.
+- `async-scoring.test.ts`: the async recipe above.
 
 ## Honest limits
 
