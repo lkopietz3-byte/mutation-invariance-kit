@@ -158,6 +158,7 @@ describe("assertInvariance: results it must never fake", () => {
     const zipSensitive = async (input: typeof base) => (input.zip === "00000" ? 1 : 2);
     expect(() => assertInvariance(zipSensitive, base, [zipScenario])).toThrow(TypeError);
     expect(() => assertInvariance(zipSensitive, base, [zipScenario])).toThrow(/fn returned a Promise/);
+    expect(() => assertInvariance(zipSensitive, base, [zipScenario])).toThrow(/each Promise is equal only to itself/);
   });
 
   it("throws when mutate returns a Promise", () => {

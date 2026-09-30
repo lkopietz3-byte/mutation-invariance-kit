@@ -235,7 +235,8 @@ export function assertInvariance<Input, Output>(
     if (isThenable(output)) {
       throw new TypeError(
         `assertInvariance: fn returned a Promise (or thenable) ${where}. assertInvariance is ` +
-          `synchronous and would compare promises, not results. See the README section on async functions.`,
+          `synchronous and would compare Promise objects, not the values they resolve to (and each Promise ` +
+          `is equal only to itself, since its state cannot be read). See the README section on async functions.`,
       );
     }
     return output as Output;
