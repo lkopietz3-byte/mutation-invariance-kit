@@ -416,7 +416,9 @@ part of `npm test`.
     match. A biased `fn` that returns `new Decision(approved)`, with
     `approved` stored in `#approved`, passes. Pass an `isEqual` that compares
     the getters you care about (`{ isEqual: (a, b) => a.approved ===
-    b.approved }`), or return plain data (`{ approved }`).
+    b.approved }`), or return plain data (`{ approved }`). The same goes for
+    state kept only in non-enumerable properties, which are not compared
+    either.
   - **One shared output object edited on every call.** The baseline output
     is deep-copied, but `Error`, `DataView`, boxed primitives (for example a
     `new Number(1)` with an extra `tag` property), `SharedArrayBuffer`, and
