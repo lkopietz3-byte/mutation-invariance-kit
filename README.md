@@ -208,12 +208,16 @@ says they are different.
   `WeakMap`, `WeakSet`, `WeakRef`, `URL`, any object with its own or an
   inherited string `Symbol.toStringTag` that is not one of the built-ins
   above (some decimal and date libraries), a built-in's prototype object
-  itself (`Date.prototype`), anything that inherits from a built-in's
-  prototype without being that built-in (a `Proxy` around a `Map`), and a
-  `DataView` whose buffer was detached. Compare those with a
-  custom `isEqual`. One known gap: a `Promise` whose prototype was replaced
-  is compared as an ordinary object, because there is no side-effect-free
-  way to recognize one.
+  itself (`Date.prototype`), anything that looks like a built-in but fails
+  its brand check (a `Proxy` around a `Map` or a `Date`, from this realm or
+  another such as a `node:vm` context; `Object.create(Date.prototype)`), and
+  a `DataView` whose buffer was detached. Compare those with a custom
+  `isEqual`. An `Error`-like value (including a `Proxy` around an `Error`)
+  is compared by its `name`, `message`, `cause`, and `errors`, since that
+  state is ordinary properties. Known gaps: a `Promise` whose prototype was
+  replaced, and a `Proxy` whose traps hide both its prototype and its
+  `constructor`, are compared as ordinary objects, because there is no
+  side-effect-free way to recognize them.
 - It never mutates its arguments. An error thrown by a getter or `Proxy`
   trap it reads propagates.
 
@@ -403,11 +407,32 @@ part of `npm test`.
   aggregate.
 - **The default comparison is strict.** `0` and `-0` differ, there is no
   floating-point tolerance, and opaque objects are equal only to themselves.
-  That can produce failures you need to handle with `isEqual`; it should not
-  produce false passes, but a custom `isEqual` or `hasChanged` can.
+  That can produce failures you need to handle with `isEqual`.
+- **The default comparison can still produce false passes** in these known
+  cases:
+  - **Private `#fields`.** JavaScript does not let code outside a class read
+    its private fields, so two instances whose state lives only in `#fields`
+    (exposed through getters) compare equal whenever their public properties
+    match. A biased `fn` that returns `new Decision(approved)`, with
+    `approved` stored in `#approved`, passes. Pass an `isEqual` that compares
+    the getters you care about (`{ isEqual: (a, b) => a.approved ===
+    b.approved }`), or return plain data (`{ approved }`).
+  - **One shared output object edited on every call.** The baseline output
+    is deep-copied, but `Error`, `DataView`, boxed primitives (for example a
+    `new Number(1)` with an extra `tag` property), `SharedArrayBuffer`, and
+    every value `deepEqual` cannot inspect are kept by reference. If `fn`
+    returns the same one of those each time and edits it, the baseline and
+    every later output hold the same object, so they compare equal. Return a
+    fresh object per call, or plain data.
+  - **Values it cannot see into that still look ordinary:** a `Promise` whose
+    prototype was replaced, and a `Proxy` whose traps hide both its
+    prototype and its `constructor`. Other values it cannot inspect are
+    equal only to themselves, which fails loudly instead.
+  - **A custom `isEqual` or `hasChanged`** is trusted as written.
 - **In-place change detection has blind spots:** values kept by reference
   (functions, `Error`, boxed primitives, `DataView`, `SharedArrayBuffer`,
-  `Promise`, private fields) are not deep-copied.
+  `Promise`, private fields) are not deep-copied, so an edit inside one of
+  them is not reported.
 - **It trusts your getters and setters.** The preset check confirms the value
   landed where `get` reads it; it cannot tell whether `get` reads the field you
   meant.
