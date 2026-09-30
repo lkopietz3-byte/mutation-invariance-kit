@@ -39,6 +39,22 @@ different (stricter) answer, so this is a minor release.
   object) no longer replaces the intended error.
 - Presets rejected nothing when `substitutionValues` had a hole (`map`
   skipped it); a hole is now a `TypeError`.
+- `deepEqual` compared a value that looks like a built-in but fails its
+  brand check as an ordinary object when the resemblance came from another
+  realm or was hidden. From another realm (a `node:vm` context): a `Proxy`
+  around a `Date`, `Number`, `Boolean`, `String` or `RegExp`,
+  `Object.create()` of its `Date.prototype`, or an old-style subclass whose
+  instances never got the internal slot. From any realm: a `Proxy` whose
+  `getPrototypeOf` trap hides a `Date`, or a `Proxy` that answers
+  `Symbol.toStringTag`. So another realm's `new Proxy(new Date(1), {})`
+  equaled `new Proxy(new Date(2), {})`. Such values are now not comparable
+  (equal only to themselves). A built-in is recognized from any realm by
+  its native constructor's name; a user class merely named `Map` is still
+  an ordinary class. An `Error`-like value from any realm, including a
+  `Proxy` around one, is compared as an `Error` by `name`, `message`,
+  `cause` and `errors`.
+- The error thrown when `fn` returns a Promise now says that each Promise
+  is equal only to itself, instead of only "would compare promises".
 
 ### Changed
 
@@ -56,6 +72,12 @@ different (stricter) answer, so this is a minor release.
   `v*` tag for both triggers, runs the dependency audit, verify and attw,
   and treats only a confirmed E404 as "not published" (MIK-F006). CI adds
   Node 20.19.0 and 22.12.0 compatibility jobs.
+- README "Honest limits" no longer says the default comparison "should not
+  produce false passes". It lists the known false passes (private
+  `#fields`, with the fix: an `isEqual` that compares the getters, or plain
+  data; one shared `Error`, `DataView` or boxed primitive returned and
+  edited on every call; values it cannot see into that still look
+  ordinary) and how to avoid them.
 
 ### Added
 
