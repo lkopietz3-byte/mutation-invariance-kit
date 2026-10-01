@@ -22,3 +22,13 @@ Check whether a decision, score, or ranking function's output changes when you m
 - Do not run `npm publish` or push tags without explicit permission. Treat any claim that a version is published as Reported until the registry confirms it.
 - Runtime `dependencies` stay empty; add dev tooling only.
 - Keep unrelated uncommitted work intact; never stage or reset the whole tree.
+
+## Review preparation
+
+See [docs/REVIEW_READINESS.md](docs/REVIEW_READINESS.md) for milestone review cadence, declared verification gates and the next launch-preparation task.
+
+## Code Review Rules
+
+- Require every supplied scenario to change the input and preserve the baseline output before returning passed: true. Reject empty/sparse/malformed scenarios, async or throwing hooks, non-boolean comparators, async cleanup and in-place changes to the baseline.
+- Preserve caller immutability and fail-closed deepEqual/snapshot behavior. Recognize built-ins through intrinsics, preserve compared metadata and use safe own-property writes. Coordinate shared copy changes with payout-invariance-kit.
+- Bound public claims to the supplied scenarios and the comparator's actual observation limits. Values retained by reference have documented mutation-detection limits; a passing run does not certify fairness, legal compliance or security.
