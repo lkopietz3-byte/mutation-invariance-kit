@@ -1,6 +1,6 @@
 # Review and launch readiness
 
-Prepared September 30, 2026 against GitHub main `a2107db62edee8badea5a68a68682567673071a3`. This is a preparation plan, not a completed product audit or marketing certification.
+Updated September 30, 2026 for the 0.2.0 follow-up against main `4e74b1a`. This is a preparation plan, not a completed product audit or marketing certification.
 
 ## Review cadence
 
@@ -8,7 +8,7 @@ Keep automatic code reviews off during preparation. Request one focused `@codex 
 
 When this repo enters sustained launch or customer-facing development, enable its repository setting individually with **All PRs / On PR open / Exhaustive Off**. Keep the personal automatic default and credit-funded reviews off. Inspect the first result before expanding cadence. Review guidance lives in the root [AGENTS.md](../AGENTS.md); it supplements existing tests and release requirements.
 
-On September 30, 2026, this repository was verified to **Follow personal preferences**, with personal automatic code reviews, exhaustive reviews and credit-funded reviews off. These settings are managed in ChatGPT; this file does not activate them.
+Before changing review automation, inspect the current repository and personal settings in ChatGPT. This document does not activate or verify those settings.
 
 ## Next preparation task
 
