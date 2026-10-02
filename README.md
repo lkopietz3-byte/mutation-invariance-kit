@@ -1,5 +1,7 @@
 # mutation-invariance-kit
 
+**[Try it in your browser →](https://lkopietz3-byte.github.io/honesty-kits/#mutation-invariance-kit)** · Part of [honesty kits](https://github.com/lkopietz3-byte/honesty-kits), a family of small checks for the claims an AI product makes.
+
 A small, zero-dependency TypeScript library for checking whether a decision,
 score, or ranking function's output changes when you change an input it is
 supposed to ignore.
