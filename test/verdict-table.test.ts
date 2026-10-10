@@ -15,7 +15,7 @@ import { assertInvariance, deepEqual } from "../src/index.js";
 import type { MutationScenario } from "../src/index.js";
 import { geographyScenarios } from "../src/presets/index.js";
 import { snapshot } from "../src/snapshot.js";
-import { runChild } from "./child.js";
+import { rootOf, runChild } from "./child.js";
 
 const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 
@@ -1239,5 +1239,94 @@ describe("verdict table 5: second review findings", { timeout: 180_000 }, () => 
     expect(result.vacuous[0]).toBe("repeat");
     expect(result.vacuous[7999]).toBe("repeat (8000)");
     expect((spent.user + spent.system) / 1000).toBeLessThan(2500);
+  });
+
+  /**
+   * Run `run` with accessors on Array.prototype indexes 0..`count`-1: the setter
+   * discards writes and the getter returns `read()`. Always removed afterwards.
+   */
+  function withPollutedIndexes<T>(count: number, read: () => unknown, run: () => T): T {
+    for (let index = 0; index < count; index += 1) {
+      Object.defineProperty(Array.prototype, index, { get: read, set: () => undefined, configurable: true });
+    }
+    try {
+      return run();
+    } finally {
+      for (let index = 0; index < count; index += 1) {
+        delete (Array.prototype as unknown as Record<number, unknown>)[index];
+      }
+    }
+  }
+
+  it("P2-4: a discarding Array.prototype setter cannot make the work queue lose nested objects", () => {
+    const make = () => Array.from({ length: 101 }, () => ({ n: 0 }));
+    const left = make();
+    const right = make();
+    (right[50] as { n: number }).n = 1;
+    // getter returns right[50], the object that differs, for every inherited index
+    const equal = withPollutedIndexes(101, () => right[50], () => deepEqual(left, right));
+    expect(equal).toBe(false);
+  });
+
+  it("P2-4: the same holds for nested Sets and Maps, ordered and unordered", () => {
+    const make = (n: number) => ({
+      set: new Set(Array.from({ length: 5 }, (_, i) => ({ i, n: i === 3 ? n : 0 }))),
+      map: new Map(Array.from({ length: 5 }, (_, i) => [{ i }, { n: i === 3 ? n : 0 }])),
+    });
+    const left = make(0);
+    const right = make(1);
+    const poisoned = left.set;
+    for (const orderSensitive of [false, true]) {
+      const equal = withPollutedIndexes(6, () => poisoned, () => deepEqual(left, right, { orderSensitive }));
+      expect(equal, `orderSensitive ${orderSensitive}`).toBe(false);
+    }
+    expect(withPollutedIndexes(6, () => poisoned, () => deepEqual(make(0), make(0)))).toBe(true);
+  });
+
+  it("P2-4: key lists keep a symbol key and a typed array keeps its extra keys", () => {
+    const tag = Symbol("tag");
+    const left = Object.assign({ a: 1 }, { [tag]: 1 });
+    const right = Object.assign({ a: 1 }, { [tag]: 2 });
+    const typedLeft = Object.assign(new Uint8Array(2), { label: "x", [tag]: 1 });
+    const typedRight = Object.assign(new Uint8Array(2), { label: "x", [tag]: 2 });
+    // The getter names a key both sides have, so a lost symbol key would leave equal key lists.
+    const objects = withPollutedIndexes(4, () => "a", () => deepEqual(left, right));
+    const typed = withPollutedIndexes(4, () => "label", () => deepEqual(typedLeft, typedRight));
+    const results = [objects, typed];
+    expect(results).toEqual([false, false]);
+  });
+
+  it("P2-4: a failure, a vacuous scenario and a scenario list are not swallowed", () => {
+    const base = { v: 1 };
+    const result = withPollutedIndexes(
+      4,
+      () => undefined,
+      () =>
+        assertInvariance((input: typeof base) => input.v, base, [
+          { name: "changes output", mutate: () => ({ v: 2 }) },
+          { name: "changes nothing", mutate: (input) => ({ ...input }) },
+          { name: "also changes output", mutate: () => ({ v: 3 }) },
+        ]),
+    );
+    expect(result.failures.map((failure) => failure.scenario)).toEqual(["changes output", "also changes output"]);
+    expect(result.vacuous).toEqual(["changes nothing"]);
+    expect(result.passed).toBe(false);
+  });
+
+  it("P2-4: the copy still catches an in-place edit when index writes are discarded", () => {
+    const base = { n: 1, a: { x: 1 }, b: { y: 1 }, c: new Set([{ z: 1 }]) };
+    const edit = (input: typeof base): number => {
+      input.b.y = 2;
+      return 1;
+    };
+    const run = () => assertInvariance(edit, base, [{ name: "s", mutate: (i) => ({ ...i, n: 2 }) }]);
+    expect(() => withPollutedIndexes(4, () => undefined, run)).toThrow(/modified baseInput in place/);
+    // and a function that leaves its input alone is not blamed (a lost copy would differ from the original)
+    const clean = () => assertInvariance((input: typeof base) => input.n, base, [{ name: "s", mutate: (i) => ({ ...i, n: 2 }) }]);
+    expect(withPollutedIndexes(4, () => undefined, clean).failures).toHaveLength(1);
+  });
+
+  it("P2-5: the package root is a real path even when the checkout path has spaces or non-ASCII characters", () => {
+    expect(rootOf("file:///tmp/my%20repo/%C3%A9t%C3%A9/test/child.ts")).toBe("/tmp/my repo/\u00e9t\u00e9/");
   });
 });

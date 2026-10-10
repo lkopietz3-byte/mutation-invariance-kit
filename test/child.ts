@@ -7,12 +7,18 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 let built: string | undefined;
 
+/** The package root for a module URL, as a file system path (percent escapes decoded). */
+export function rootOf(moduleUrl: string): string {
+  return fileURLToPath(new URL("..", moduleUrl));
+}
+
 export function builtLibrary(): string {
   if (built !== undefined) return built;
-  const root = new URL("..", import.meta.url).pathname;
+  const root = rootOf(import.meta.url);
   const out = mkdtempSync(join(tmpdir(), "mik-child-"));
   mkdirSync(join(out, "lib"));
   writeFileSync(join(out, "package.json"), JSON.stringify({ type: "module" }));

@@ -15,7 +15,7 @@
  * node:test, or a one-off script.
  */
 
-import { deepEqual } from "./deepEqual.js";
+import { appendOwn, deepEqual } from "./deepEqual.js";
 import type { DeepEqualOptions } from "./deepEqual.js";
 import { describeError, hasOwn, isPlainRecord, quote } from "./internal.js";
 import { snapshot } from "./snapshot.js";
@@ -172,7 +172,7 @@ function snapshotScenarios<Input>(scenarios: unknown): MutationScenario<Input>[]
       nextSuffix.set(name, copy + 1);
     }
     used.add(unique);
-    list.push({ name: unique, mutate: mutate as (input: Input) => Input, category });
+    appendOwn(list, { name: unique, mutate: mutate as (input: Input) => Input, category });
   }
   return list;
 }
@@ -373,7 +373,7 @@ export function assertInvariance<Input, Output>(
         ? customHasChanged(baseInput, mutatedInput)
         : guarded(`${label}: comparing the mutated input with baseInput`, () => !deepEqual(baseInput, mutatedInput, compareOptions));
     if (!checkedBoolean("hasChanged", `for ${label}`, changed)) {
-      vacuous.push(name);
+      appendOwn(vacuous, name);
       continue;
     }
 
@@ -391,7 +391,7 @@ export function assertInvariance<Input, Output>(
         ? customIsEqual(baseline, actual)
         : guarded(`${label}: comparing the output with the baseline`, () => deepEqual(baseline, actual, compareOptions));
     if (!checkedBoolean("isEqual", `for ${label}`, equal)) {
-      failures.push({ scenario: name, category, mutatedInput, expected: baseline, actual });
+      appendOwn(failures, { scenario: name, category, mutatedInput, expected: baseline, actual });
     }
   }
 

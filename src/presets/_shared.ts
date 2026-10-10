@@ -7,6 +7,7 @@
  * field-path string, so there is no path syntax to get wrong and no property
  * name from the caller is ever used to write into an object.
  */
+import { appendOwn } from "../deepEqual.js";
 import { describeValue, escapeText, hasOwn, isBlank, isPlainRecord } from "../internal.js";
 import type { MutationScenario, ScenarioCategory } from "../types.js";
 
@@ -41,7 +42,7 @@ export function validatePresetArguments<Value>(
         `${preset}: substitutionValues[${index}] must be a ${valueType}, got ${value === null ? "null" : typeof value}.`,
       );
     }
-    values.push(value as Value);
+    appendOwn(values, value as Value);
   }
   if (opts !== undefined && !isPlainRecord(opts)) {
     throw new TypeError(`${preset}: opts must be a plain object (or omitted).`);
