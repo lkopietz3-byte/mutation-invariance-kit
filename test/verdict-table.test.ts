@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { assertInvariance, deepEqual } from "../src/index.js";
 import type { MutationScenario } from "../src/index.js";
 import { geographyScenarios } from "../src/presets/index.js";
+import { snapshot } from "../src/snapshot.js";
 import { runChild } from "./child.js";
 
 const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
@@ -1005,5 +1006,153 @@ describe("verdict table 3b: more self-hunt probes", () => {
     expect(() => deepEqual(1, 1, [] as never)).toThrow(TypeError);
     expect(() => deepEqual(1, 1, new Map() as never)).toThrow(TypeError);
     expect(deepEqual(1, 1, {})).toBe(true);
+  });
+});
+
+describe("verdict table 4: review findings on the fast paths and the copy", { timeout: 180_000 }, () => {
+  /** A Proxy over `target` whose ownKeys lists the index keys in reverse order. */
+  const reverseKeyed = <T extends unknown[]>(target: T): T =>
+    new Proxy(target, { ownKeys: () => [...target.keys()].map(String).reverse().concat("length") });
+
+  it("P1: an array Proxy that lists its keys out of order is compared by index, not by key order", () => {
+    const proxy = reverseKeyed([1, 2]);
+    expect(deepEqual(proxy, [2, 1])).toBe(false);
+    expect(deepEqual([2, 1], proxy)).toBe(false);
+    expect(deepEqual(proxy, [1, 2])).toBe(true);
+    expect(deepEqual([1, 2], proxy)).toBe(true);
+    expect(deepEqual(reverseKeyed([1, 2]), reverseKeyed([1, 2]))).toBe(true);
+    expect(deepEqual(reverseKeyed([1, 2]), reverseKeyed([2, 1]))).toBe(false);
+  });
+
+  it("P1: a reversed ranking cannot pass because one side is such a Proxy", () => {
+    const base = { flip: false };
+    const fn = (input: typeof base): number[] => (input.flip ? [2, 1] : reverseKeyed([1, 2]));
+    const result = assertInvariance(fn, base, [{ name: "flip", mutate: () => ({ flip: true }) }]);
+    expect(result.passed).toBe(false);
+    expect(result.failures).toHaveLength(1);
+  });
+
+  it("P2: a Map or Set with a null prototype in the input is copied and checked", () => {
+    const map = Object.setPrototypeOf(new Map([["a", 1]]), null) as Map<string, number>;
+    const set = Object.setPrototypeOf(new Set([1, 2]), null) as Set<number>;
+    const base = { n: 1, map, set };
+    const result = assertInvariance((input: typeof base) => input.n * 2, base, [
+      { name: "n -> 2", mutate: (input) => ({ ...input, n: 2 }) },
+    ]);
+    expect(result.failures).toHaveLength(1);
+    expect(result.vacuous).toEqual([]);
+  });
+
+  it("P2: an in-place edit of such a null-prototype Map is still caught", () => {
+    const map = Object.setPrototypeOf(new Map([["a", 1]]), null) as Map<string, number>;
+    const base = { n: 1, map };
+    const edit = (input: typeof base): number => {
+      Map.prototype.set.call(input.map, "b", 2);
+      return 1;
+    };
+    expect(() => assertInvariance(edit, base, [{ name: "s", mutate: (i) => ({ ...i, n: 2 }) }])).toThrow(
+      /modified baseInput in place/,
+    );
+  });
+
+  it("P2: a read-only Map or Set subclass is copied without calling its overrides", () => {
+    class ReadOnlyMap extends Map<string, number> {
+      override set(): this {
+        throw new Error("read-only map");
+      }
+    }
+    class ReadOnlySet extends Set<number> {
+      override add(): this {
+        throw new Error("read-only set");
+      }
+    }
+    const map = new ReadOnlyMap();
+    Map.prototype.set.call(map, "a", 1);
+    const set = new ReadOnlySet();
+    Set.prototype.add.call(set, 1);
+    const base = { n: 1, map, set };
+    const result = assertInvariance((input: typeof base) => input.n, base, [
+      { name: "n -> 2", mutate: (input) => ({ ...input, n: 2 }) },
+    ]);
+    expect(result.failures).toHaveLength(1);
+  });
+
+  /** An accessor whose first read returns `first` and every later read returns "later". */
+  const flaky = (target: object, key: string, first: string): { reads: () => number } => {
+    let reads = 0;
+    Object.defineProperty(target, key, {
+      get: () => {
+        reads += 1;
+        return reads === 1 ? first : "later";
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    return { reads: () => reads };
+  };
+
+  it("P2: an extra getter key on an array is read once per comparison (first reads x and y differ)", () => {
+    const a = [1, 2];
+    const b = [1, 2];
+    const readsA = flaky(a, "label", "x");
+    const readsB = flaky(b, "label", "y");
+    expect(deepEqual(a, b)).toBe(false);
+    expect(readsA.reads()).toBe(1);
+    expect(readsB.reads()).toBe(1);
+  });
+
+  it("P2: an extra getter key on a typed array is read once per comparison", () => {
+    const a = new Uint8Array(2);
+    const b = new Uint8Array(2);
+    const readsA = flaky(a, "label", "x");
+    const readsB = flaky(b, "label", "y");
+    expect(deepEqual(a, b)).toBe(false);
+    expect(readsA.reads()).toBe(1);
+    expect(readsB.reads()).toBe(1);
+  });
+
+  it("P2: an element getter on an array with a hole is read once per comparison", () => {
+    const make = (first: string) => {
+      const array: unknown[] = [0, 1, 2];
+      // eslint-disable-next-line @typescript-eslint/no-array-delete -- a hole is the point
+      delete array[1];
+      const probe = flaky(array, "0", first);
+      return { array, probe };
+    };
+    const a = make("x");
+    const b = make("y");
+    expect(deepEqual(a.array, b.array)).toBe(false);
+    expect(a.probe.reads()).toBe(1);
+    expect(b.probe.reads()).toBe(1);
+  });
+
+  it("P2: the copy reads an extra getter key once", () => {
+    const array = [1, 2];
+    const probe = flaky(array, "label", "x");
+    const copy = snapshot(array) as unknown as { label: string };
+    expect(probe.reads()).toBe(1);
+    expect(copy.label).toBe("x");
+  });
+
+  it("P4: Set(Set(array of 150,000 objects)) compares without exceeding the argument limit", () => {
+    const make = (last: number) =>
+      new Set([new Set([Array.from({ length: 150_000 }, (_, i) => ({ i: i === 149_999 ? last : i }))])]);
+    expect(deepEqual(make(149_999), make(149_999))).toBe(true);
+    expect(deepEqual(make(149_999), make(-1))).toBe(false);
+  });
+
+  it("P4: a typed array with 150,000 named metadata keys compares and copies", () => {
+    const make = () => {
+      const typed = new Uint8Array(3);
+      for (let i = 0; i < 150_000; i += 1) Object.defineProperty(typed, `k${i}`, { value: i, enumerable: true, writable: true, configurable: true });
+      return typed;
+    };
+    expect(deepEqual(make(), make())).toBe(true);
+    const other = make();
+    Object.defineProperty(other, "k149999", { value: -1, enumerable: true, writable: true, configurable: true });
+    expect(deepEqual(make(), other)).toBe(false);
+    const base = { n: 1, typed: make() };
+    const result = assertInvariance((input: typeof base) => input.n, base, [{ name: "s", mutate: (i) => ({ ...i, n: 2 }) }]);
+    expect(result.failures).toHaveLength(1);
   });
 });

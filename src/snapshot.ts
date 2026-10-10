@@ -75,6 +75,12 @@ interface Pending {
 
 type Seen = WeakMap<object, unknown>;
 
+// Captured now: a copy is filled with the real Map/Set operations, so a null
+// or replaced prototype, or a subclass override, cannot break or run during
+// the copy.
+const mapSet = Reflect.get(Map.prototype, "set") as (this: object, ...args: unknown[]) => unknown;
+const setAdd = Reflect.get(Set.prototype, "add") as (this: object, ...args: unknown[]) => unknown;
+
 export function snapshot<T>(value: T): T {
   const seen: Seen = new WeakMap();
   const pending: Pending[] = [];
@@ -157,11 +163,11 @@ function shell(value: unknown, seen: Seen, pending: Pending[]): unknown {
 /** Fill in a copy's entries, members, elements and own enumerable properties. */
 function fill({ from, to, kind, dense }: Pending, seen: Seen, pending: Pending[]): void {
   if (kind === "Map") {
-    const map = to as Map<unknown, unknown>;
-    for (const [key, entry] of mapEntries(from)) map.set(shell(key, seen, pending), shell(entry, seen, pending));
+    for (const [key, entry] of mapEntries(from)) {
+      Reflect.apply(mapSet, to, [shell(key, seen, pending), shell(entry, seen, pending)]);
+    }
   } else if (kind === "Set") {
-    const set = to as Set<unknown>;
-    for (const member of setValues(from)) set.add(shell(member, seen, pending));
+    for (const member of setValues(from)) Reflect.apply(setAdd, to, [shell(member, seen, pending)]);
   }
 
   if (dense) {

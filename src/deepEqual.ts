@@ -120,7 +120,6 @@ const boxedValueOf = ["Number", "String", "Boolean", "Symbol", "BigInt"].flatMap
 const objectToString = methodOf(Object.prototype, "toString") as Intrinsic;
 const propertyIsEnumerable = methodOf(Object.prototype, "propertyIsEnumerable") as Intrinsic;
 const hasOwnProperty = methodOf(Object.prototype, "hasOwnProperty") as Intrinsic;
-const objectValues = Object.values;
 const objectKeys = Object.keys;
 const objectSymbols = Object.getOwnPropertySymbols;
 const hasEnumerableIndex = (array: object, index: number): boolean =>
@@ -479,23 +478,37 @@ function hasEnumerableSymbol(value: object): boolean {
  * Internal. The fast path for arrays. If `array` is "clean" (its own
  * enumerable keys are exactly the indices 0 to length - 1 and nothing else,
  * not even an enumerable symbol), returns a new array holding its element
- * values, read the way `Object.values` reads them (so a getter runs once).
- * Otherwise (a hole, a non-enumerable element, an extra key) returns
- * undefined and the caller takes the exact key-by-key path.
+ * values, each read once by index (so a getter runs once and a Proxy that
+ * lists its keys in another order cannot reorder the elements). Otherwise
+ * (a hole, a non-enumerable element, an extra key) returns undefined, having
+ * run no getter, and the caller takes the exact key-by-key path.
  *
- * The count of own enumerable string keys equals the length only if no hole
- * and no extra key exists, or if a hole and an extra key (or a non-enumerable
- * element and an extra key) cancel out; the per-index enumerability check
- * rules that second case out, so a "clean" answer is exact.
+ * `Object.keys` counts the enumerable string keys without reading any value.
+ * A count equal to the length is not enough on its own (a hole and an extra
+ * key cancel out), so every index is also confirmed: by the key list itself
+ * when it is in the usual order, otherwise one `propertyIsEnumerable` check
+ * per index. A "clean" answer is exact.
  */
 export function denseElements(array: object): unknown[] | undefined {
   const length = (array as unknown[]).length;
-  const values = objectValues(array) as unknown[];
-  if (values.length !== length) return undefined;
+  const keys = objectKeys(array);
+  if (keys.length !== length) return undefined;
+  let inOrder = true;
   for (let index = 0; index < length; index += 1) {
-    if (!hasEnumerableIndex(array, index)) return undefined;
+    if (keys[index] !== String(index)) {
+      inOrder = false;
+      break;
+    }
   }
-  return hasEnumerableSymbol(array) ? undefined : values;
+  if (!inOrder) {
+    for (let index = 0; index < length; index += 1) {
+      if (!hasEnumerableIndex(array, index)) return undefined;
+    }
+  }
+  if (hasEnumerableSymbol(array)) return undefined;
+  const values = new Array<unknown>(length);
+  for (let index = 0; index < length; index += 1) values[index] = (array as unknown[])[index];
+  return values;
 }
 
 /**
@@ -503,14 +516,12 @@ export function denseElements(array: object): unknown[] | undefined {
  * indices (named keys in creation order, then symbols). A real typed array
  * has exactly `length` enumerable index keys, listed first and in order, and
  * can never hold another index-like key, so the extra string keys are
- * whatever follows them.
+ * whatever follows them. No value is read here.
  */
 export function typedArrayExtraKeys(value: object): (string | symbol)[] {
-  const length = typedArrayLength(value);
+  const keys = objectKeys(value);
   const extras: (string | symbol)[] = [];
-  // Counting through Object.values avoids creating one string per element in
-  // the common case of no extra key.
-  if ((objectValues(value) as unknown[]).length !== length) extras.push(...objectKeys(value).slice(length));
+  for (let index = typedArrayLength(value); index < keys.length; index += 1) extras.push(keys[index] as string);
   for (const symbol of objectSymbols(value)) {
     if (propertyIsEnumerable(value, symbol) === true) extras.push(symbol);
   }
@@ -680,7 +691,7 @@ function trial(pairs: unknown[], ctx: Context): boolean {
     ctx.journal = outer;
   }
   if (equal) {
-    if (outer !== null) outer.push(...mine);
+    if (outer !== null) for (const entry of mine) outer.push(entry);
   } else {
     for (const [x, y] of mine) ctx.visited.get(x)?.delete(y);
   }

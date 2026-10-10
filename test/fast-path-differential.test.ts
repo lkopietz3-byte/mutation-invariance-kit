@@ -49,11 +49,39 @@ function reference(a: unknown[] | ArrayLike<unknown>, b: unknown[] | ArrayLike<u
   return true;
 }
 
+/** Accessors installed by the generator, each counting its reads (every one must run at most once per comparison). */
+const counters: { reads: number }[] = [];
+
+function countedGetter(target: object, key: PropertyKey, enumerable: boolean): void {
+  const counter = { reads: 0 };
+  counters.push(counter);
+  Object.defineProperty(target, key, {
+    get: () => {
+      counter.reads += 1;
+      return 1;
+    },
+    enumerable,
+    configurable: true,
+  });
+}
+
+/** The same array seen through a Proxy that lists its keys in reverse order (indices last-to-first, then the rest). */
+function reverseKeyed(array: unknown[]): unknown[] {
+  return new Proxy(array, {
+    ownKeys: (target) => {
+      const keys = Reflect.ownKeys(target);
+      const indices = keys.filter((key) => typeof key === "string" && /^(?:0|[1-9]\d*)$/.test(key));
+      const rest = keys.filter((key) => !indices.includes(key));
+      return [...indices.reverse(), ...rest];
+    },
+  });
+}
+
 function perturbArray(random: () => number, array: unknown[]): void {
   const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)] as T;
   const edits = Math.floor(random() * 3);
   for (let i = 0; i < edits; i += 1) {
-    const kind = Math.floor(random() * 7);
+    const kind = Math.floor(random() * 9);
     const index = Math.floor(random() * Math.max(array.length, 1));
     switch (kind) {
       case 0:
@@ -75,7 +103,13 @@ function perturbArray(random: () => number, array: unknown[]): void {
         Object.defineProperty(array, index, { value: pick(POOL), enumerable: true, writable: true, configurable: true });
         break;
       case 5:
-        if (index < array.length) Object.defineProperty(array, index, { get: () => 1, enumerable: true, configurable: true });
+        if (index < array.length) countedGetter(array, index, true);
+        break;
+      case 6:
+        countedGetter(array, pick(["label", "meta"]), true);
+        break;
+      case 7:
+        countedGetter(array, pick(["quiet", "hushed"]), false);
         break;
       default:
         Object.defineProperty(array, pick(["hidden", "other"]), { value: 1, enumerable: false });
@@ -89,21 +123,36 @@ describe("array fast path agrees with the key-by-key rules", { timeout: 120_000 
     let equalPairs = 0;
     let unequalPairs = 0;
     for (let round = 0; round < 5000; round += 1) {
+      counters.length = 0;
       const length = Math.floor(random() * 7);
       const a = Array.from({ length }, () => POOL[Math.floor(random() * POOL.length)]);
       const b = random() < 0.5 ? [...a] : Array.from({ length }, () => POOL[Math.floor(random() * POOL.length)]);
       if (random() < 0.7) perturbArray(random, a);
       if (random() < 0.7) perturbArray(random, b);
+      const viewA = random() < 0.2 ? reverseKeyed(a) : a;
+      const viewB = random() < 0.2 ? reverseKeyed(b) : b;
+      const reordered = viewA !== a || viewB !== b;
       for (const ordered of [false, true]) {
+        // Index order is the element order; only a lying Proxy can list indices differently, so skip those in ordered mode.
+        if (ordered && reordered) continue;
         const expected = reference(a, b, ordered, false);
         const options = { orderSensitive: ordered };
-        expect(deepEqual(a, b, options), `round ${round} ordered=${ordered}`).toBe(expected);
-        expect(deepEqual(b, a, options), `round ${round} reversed ordered=${ordered}`).toBe(expected);
+        for (const [left, right, label] of [[viewA, viewB, "forward"], [viewB, viewA, "reversed"]] as const) {
+          for (const counter of counters) counter.reads = 0;
+          expect(deepEqual(left, right, options), `round ${round} ${label} ordered=${ordered}`).toBe(expected);
+          for (const counter of counters) {
+            expect(counter.reads, `round ${round} ${label} getter reads`).toBeLessThanOrEqual(1);
+          }
+        }
         if (expected) equalPairs += 1;
         else unequalPairs += 1;
       }
-      // A copy always equals its original, whatever the original looked like.
-      expect(deepEqual(snapshot(a), a, { orderSensitive: true }), `snapshot round ${round}`).toBe(true);
+      // A copy always equals its original, whatever the original looked like,
+      // and making it reads every getter at most once.
+      for (const counter of counters) counter.reads = 0;
+      const copy = snapshot(a);
+      for (const counter of counters) expect(counter.reads, `snapshot round ${round} getter reads`).toBeLessThanOrEqual(1);
+      expect(deepEqual(copy, a, { orderSensitive: true }), `snapshot round ${round}`).toBe(true);
     }
     // The generator exercises both outcomes (guards against a test that proves nothing).
     expect(equalPairs).toBeGreaterThan(500);
@@ -177,5 +226,38 @@ describe("array fast path agrees with the key-by-key rules", { timeout: 120_000 
     expect(Object.keys(parsedCopy)).toEqual(["__proto__", "list"]);
     expect(deepEqual(parsedCopy, parsed)).toBe(true);
     expect(({} as { admin?: boolean }).admin).toBeUndefined();
+  });
+
+  it("very wide inputs (200,000 elements or keys) agree with the key-by-key rules", () => {
+    const WIDE = 200_000;
+    const wide = (): unknown[] => Array.from({ length: WIDE }, (_, i) => i);
+    const withExtra = (target: object, count: number): object => {
+      for (let i = 0; i < count; i += 1) Object.defineProperty(target, `k${i}`, { value: i, enumerable: true, writable: true, configurable: true });
+      return target;
+    };
+    const withHole = (): unknown[] => {
+      const array = wide();
+      // eslint-disable-next-line @typescript-eslint/no-array-delete -- a hole is the point
+      delete array[WIDE - 1];
+      return array;
+    };
+    const cases: [string, object, object][] = [
+      ["equal dense", wide(), wide()],
+      ["last element differs", wide(), Object.assign(wide(), { [WIDE - 1]: -1 })],
+      ["one extra key", Object.assign(wide(), { tag: 1 }), wide()],
+      ["same extra key", Object.assign(wide(), { tag: 1 }), Object.assign(wide(), { tag: 1 })],
+      ["hole at the end", wide(), withHole()],
+      ["many named keys on arrays", withExtra(wide(), 1000), withExtra(wide(), 1000)],
+      ["typed equal", new Float64Array(WIDE), new Float64Array(WIDE)],
+      ["typed with 150,000 extra keys", withExtra(new Uint8Array(4), 150_000), withExtra(new Uint8Array(4), 150_000)],
+      ["typed extra key value differs", withExtra(new Uint8Array(4), 5000), Object.assign(withExtra(new Uint8Array(4), 5000), { k4999: -1 })],
+    ];
+    for (const [label, left, right] of cases) {
+      const typed = ArrayBuffer.isView(left);
+      const expected = reference(left as unknown[], right as unknown[], false, typed);
+      expect(deepEqual(left, right), label).toBe(expected);
+      expect(deepEqual(right, left), `${label} (reversed)`).toBe(expected);
+      expect(deepEqual(snapshot(left), left, { orderSensitive: true }), `${label} (copy)`).toBe(true);
+    }
   });
 });
