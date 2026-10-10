@@ -5,6 +5,13 @@
  */
 import { kindOf } from "./deepEqual.js";
 
+// Captured once at import (README, Honest limits, "Built-ins and tampering").
+const objectIs = Object.is;
+const getPrototypeOf = Object.getPrototypeOf;
+const objectPrototype = Object.prototype;
+const reflectApply = Reflect.apply;
+const hasOwnProperty: (this: object, key: PropertyKey) => boolean = Reflect.get(Object.prototype, "hasOwnProperty");
+
 const SHORT_ESCAPES = new Map([
   ["\n", "\\n"],
   ["\r", "\\r"],
@@ -41,19 +48,19 @@ export function describeError(error: unknown): string {
 export function describeValue(value: unknown): string {
   if (typeof value === "string") return quote(value);
   if (typeof value === "bigint") return `${value}n`;
-  if (typeof value === "number") return Object.is(value, -0) ? "-0" : String(value);
+  if (typeof value === "number") return objectIs(value, -0) ? "-0" : String(value);
   if (typeof value === "object" && value !== null) return "an object";
   if (typeof value === "function") return "a function";
   return typeof value === "symbol" ? "a symbol" : String(value);
 }
 
-export const hasOwn = (object: object, key: PropertyKey): boolean => Object.prototype.hasOwnProperty.call(object, key);
+export const hasOwn = (object: object, key: PropertyKey): boolean => reflectApply(hasOwnProperty, object, [key]);
 
 /** Only a plain `{}` or `Object.create(null)` object counts as an options record. */
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || kindOf(value) !== "Object") return false;
-  const proto = Object.getPrototypeOf(value) as unknown;
-  return proto === Object.prototype || proto === null;
+  const proto = getPrototypeOf(value) as unknown;
+  return proto === objectPrototype || proto === null;
 }
 
 /** Blank means only whitespace and default-ignorable characters (zero-width and bidi formatting marks). */

@@ -15,7 +15,7 @@
  * node:test, or a one-off script.
  */
 
-import { appendOwn, deepEqual } from "./deepEqual.js";
+import { appendOwn, deepEqual, isRangeError } from "./deepEqual.js";
 import type { DeepEqualOptions } from "./deepEqual.js";
 import { describeError, hasOwn, isPlainRecord, quote } from "./internal.js";
 import { snapshot } from "./snapshot.js";
@@ -88,6 +88,12 @@ export interface AssertInvarianceOptions<Input, Output> {
 
 const ignore = (): void => undefined;
 const promiseThen = Reflect.get(Promise.prototype, "then") as (...args: unknown[]) => unknown;
+// Built-ins this file calls on the way to a verdict, captured once at import
+// (README, Honest limits, "Built-ins and tampering").
+const reflectApply = Reflect.apply;
+const reflectGet = Reflect.get;
+const objectCreate = Object.create;
+const isArray = Array.isArray;
 
 /**
  * True if `value` is a Promise or other thenable. A genuine Promise we are
@@ -103,7 +109,7 @@ function refuseThenable(value: unknown): boolean {
     // The built-in then, not the value's own: it succeeds only on a genuine
     // Promise (any subclass), and a thenable's own then() is never called,
     // because calling it could itself create a rejecting Promise nobody handles.
-    Reflect.apply(promiseThen, value, [ignore, ignore]);
+    reflectApply(promiseThen, value, [ignore, ignore]);
   } catch {
     // Not a genuine Promise: nothing to detach. The caller gets the TypeError below.
   }
@@ -115,7 +121,7 @@ function guarded<T>(where: string, run: () => T): T {
   try {
     return run();
   } catch (error) {
-    if (error instanceof RangeError) {
+    if (isRangeError(error)) {
       throw new Error(
         `assertInvariance: ${where}: a value is nested too deeply to copy or compare (the comparison hit a ` +
           `RangeError, most likely a stack overflow). Flatten the nesting, or pass your own isEqual and hasChanged.`,
@@ -134,7 +140,7 @@ function guarded<T>(where: string, run: () => T): T {
  * array's iterator or the scenario's getters do later.
  */
 function snapshotScenarios<Input>(scenarios: unknown): MutationScenario<Input>[] {
-  if (!Array.isArray(scenarios)) {
+  if (!isArray(scenarios)) {
     throw new TypeError("assertInvariance: scenarios must be an array of { name, mutate } objects.");
   }
   const length = scenarios.length;
@@ -144,34 +150,35 @@ function snapshotScenarios<Input>(scenarios: unknown): MutationScenario<Input>[]
     );
   }
   const list: MutationScenario<Input>[] = [];
-  const used = new Set<string>();
-  const nextSuffix = new Map<string, number>();
+  // Null-prototype dictionaries, not Set/Map: no built-in method is called to decide a name.
+  const used = objectCreate(null) as Record<string, true | undefined>;
+  const nextSuffix = objectCreate(null) as Record<string, number | undefined>;
   for (let index = 0; index < length; index += 1) {
     if (!hasOwn(scenarios, index)) {
       throw new TypeError(`assertInvariance: scenarios[${index}] is missing (a hole in a sparse array). Pass a dense array.`);
     }
     const candidate: unknown = scenarios[index];
     const isObject = typeof candidate === "object" && candidate !== null;
-    const name: unknown = isObject ? Reflect.get(candidate, "name") : undefined;
-    const mutate: unknown = isObject ? Reflect.get(candidate, "mutate") : undefined;
+    const name: unknown = isObject ? reflectGet(candidate, "name") : undefined;
+    const mutate: unknown = isObject ? reflectGet(candidate, "mutate") : undefined;
     if (typeof name !== "string" || typeof mutate !== "function") {
       throw new TypeError(
         `assertInvariance: scenarios[${index}] must be an object with a string "name" and a "mutate" function.`,
       );
     }
-    const category = Reflect.get(candidate as object, "category") as MutationScenario<Input>["category"];
+    const category = reflectGet(candidate as object, "category") as MutationScenario<Input>["category"];
     // Two scenarios with one name (for example a preset given a repeated value)
     // would be indistinguishable in `failures`, `vacuous` and error messages.
     let unique = name;
-    if (used.has(unique)) {
+    if (used[unique] === true) {
       // Resume at the next suffix this name has not used, so a long run of one
       // repeated name stays linear; the loop still skips a name the caller took.
-      let copy = nextSuffix.get(name) ?? 2;
-      while (used.has(`${name} (${copy})`)) copy += 1;
+      let copy = nextSuffix[name] ?? 2;
+      while (used[`${name} (${copy})`] === true) copy += 1;
       unique = `${name} (${copy})`;
-      nextSuffix.set(name, copy + 1);
+      nextSuffix[name] = copy + 1;
     }
-    used.add(unique);
+    used[unique] = true;
     appendOwn(list, { name: unique, mutate: mutate as (input: Input) => Input, category });
   }
   return list;
@@ -191,16 +198,25 @@ function readOptions(opts: unknown): ReadOptions {
   if (opts === undefined) return { isEqual: undefined, hasChanged: undefined, cleanup: undefined, orderSensitive: false };
   if (!isPlainRecord(opts)) throw new TypeError("assertInvariance: opts must be a plain object (or omitted).");
   const hooks = { isEqual: opts.isEqual, hasChanged: opts.hasChanged, cleanup: opts.cleanup };
-  for (const [hook, value] of Object.entries(hooks)) {
-    if (value !== undefined && typeof value !== "function") {
-      throw new TypeError(`assertInvariance: opts.${hook} must be a function (or omitted).`);
-    }
+  if (hooks.isEqual !== undefined && typeof hooks.isEqual !== "function") {
+    throw new TypeError("assertInvariance: opts.isEqual must be a function (or omitted).");
+  }
+  if (hooks.hasChanged !== undefined && typeof hooks.hasChanged !== "function") {
+    throw new TypeError("assertInvariance: opts.hasChanged must be a function (or omitted).");
+  }
+  if (hooks.cleanup !== undefined && typeof hooks.cleanup !== "function") {
+    throw new TypeError("assertInvariance: opts.cleanup must be a function (or omitted).");
   }
   const orderSensitive = opts.orderSensitive;
   if (orderSensitive !== undefined && typeof orderSensitive !== "boolean") {
     throw new TypeError("assertInvariance: opts.orderSensitive must be a boolean (or omitted).");
   }
-  return { ...(hooks as { isEqual: Hook; hasChanged: Hook; cleanup: Hook }), orderSensitive: orderSensitive === true };
+  return {
+    isEqual: hooks.isEqual as Hook,
+    hasChanged: hooks.hasChanged as Hook,
+    cleanup: hooks.cleanup as Hook,
+    orderSensitive: orderSensitive === true,
+  };
 }
 
 /**
@@ -349,7 +365,8 @@ export function assertInvariance<Input, Output>(
   const failures: InvarianceResult<Input, Output>["failures"] = [];
   const vacuous: string[] = [];
 
-  for (const { name, mutate, category } of list) {
+  for (let position = 0; position < list.length; position += 1) {
+    const { name, mutate, category } = list[position] as MutationScenario<Input>;
     const label = `scenario ${quote(name)}`;
     let mutatedInput: Input;
     try {

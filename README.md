@@ -491,13 +491,43 @@ part of `npm test`.
   Measured as CPU time on a busy machine (so read these as upper bounds),
   Node 26, best of 3, old and new builds run back to back (the two runs
   differed by up to 40 percent): comparing two arrays of 1,000,000 numbers took
-  about 0.2 s with and without the fast path, two `Float64Array`s of 1,000,000
-  about 0.08 s (0.13 s before). A whole `assertInvariance` run with one
+  about 0.25 s with and without the fast path, two `Float64Array`s of 1,000,000
+  about 0.09 s (0.19 s before). A whole `assertInvariance` run with one
   scenario and a 1,000,000-number array as both input and output took about
-  1.15 s (1.4 to 2.0 s before); with a `Float64Array`, about 0.4 s (0.6 to 0.8 s
-  before). Comparing 200,000 small objects took about 0.5 s (0.4 s before). Arrays of objects
+  1.1 s (2.0 to 2.6 s before); with a `Float64Array`, about 0.45 s (0.9 s
+  before). Comparing 200,000 small objects took about 0.6 to 0.8 s (0.5 s before). Arrays of objects
   are bound by the per-object cost above, not by the fast path. Object `Set`
   and `Map` matching without `orderSensitive` is quadratic.
+- **Built-ins and tampering.** The comparison, the copy and the run loop do
+  not look built-ins up while they work. What they use is saved when the
+  package loads (the module is imported), and what they cannot save they avoid:
+  - *Saved at import:* `Object.is`, `Object.keys`, `Object.getOwnPropertySymbols`,
+    `Object.getPrototypeOf`, `Object.setPrototypeOf`, `Object.getOwnPropertyDescriptor`,
+    `Object.defineProperty`, `Object.create`, `Reflect.get`, `Reflect.apply`,
+    `Array.isArray`, `Array.from`, `ArrayBuffer.isView`, `Function.prototype.call`
+    and `bind`, the `Map`, `Set`, `WeakMap`, `WeakSet`, `Date`, `RegExp`, `ArrayBuffer`,
+    `DataView`, typed array, `Number`/`String`/`Boolean`/`Symbol`/`BigInt`, `WeakRef`
+    and `FinalizationRegistry` operations used to recognize and read a value,
+    `Object.prototype.propertyIsEnumerable`, `hasOwnProperty` and `toString`,
+    `Function.prototype.toString`, `Promise.prototype.then` (to detach a refused
+    Promise), and the `Map`, `Set`, `WeakMap`, `WeakSet`, `Array`, `Date`, `RegExp`,
+    `ArrayBuffer` and `Uint8Array` constructors.
+  - *Avoided:* no `for...of`, spread, array destructuring or iterator protocol, and
+    no `Array.prototype` method (`push`, `map`, `filter`, `splice` and the like) on the
+    way to a verdict. Lists are built as own data properties or as linked stacks, so an
+    iterator, an index accessor or a method put on `Object.prototype` or
+    `Array.prototype` cannot empty, shorten or reorder them. The check for a built-in
+    function's source is written by hand instead of with a regular expression, and a
+    stack overflow is recognized from the prototype chain instead of `instanceof`.
+  - *Not saved, and out of scope:* the text helpers (error-message escaping, which uses
+    a regular expression, `Map` and `String` methods) and the preset label check
+    (`isBlank`). They shape messages and input validation, not a verdict.
+  - *Also out of scope:* a script that rewrites a built-in before this package is
+    imported, that replaces a global binding (such as `Object` or `Array` themselves),
+    or that rewrites any built-in not listed as saved above. The package is a
+    regression test for code you run in your own process; it is not a sandbox against
+    code in that process that is trying to fool it. The values you pass in, and your
+    own `fn`, `mutate` and hooks, run as written (getters and `Proxy` traps included).
 - **It is a regression test, not an audit.** Re-run it in CI whenever the
   function changes, and use it alongside domain expertise, not instead of it.
 
