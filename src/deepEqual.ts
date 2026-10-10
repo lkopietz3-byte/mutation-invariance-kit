@@ -121,6 +121,7 @@ const objectToString = methodOf(Object.prototype, "toString") as Intrinsic;
 const propertyIsEnumerable = methodOf(Object.prototype, "propertyIsEnumerable") as Intrinsic;
 const hasOwnProperty = methodOf(Object.prototype, "hasOwnProperty") as Intrinsic;
 const objectKeys = Object.keys;
+const arrayFrom = Array.from as AnyFunction;
 const objectSymbols = Object.getOwnPropertySymbols;
 const hasEnumerableIndex = (array: object, index: number): boolean =>
   Object.prototype.propertyIsEnumerable.call(array, index);
@@ -506,9 +507,10 @@ export function denseElements(array: object): unknown[] | undefined {
     }
   }
   if (hasEnumerableSymbol(array)) return undefined;
-  const values = new Array<unknown>(length);
-  for (let index = 0; index < length; index += 1) values[index] = (array as unknown[])[index];
-  return values;
+  // Array.from creates own data properties, so an accessor an outside script
+  // put on Array.prototype (a setter that discards writes) cannot swallow an
+  // element the way plain assignment into a fresh array would.
+  return reflectApply(arrayFrom, Array, [{ length }, (_: unknown, index: number) => (array as unknown[])[index]]) as unknown[];
 }
 
 /**

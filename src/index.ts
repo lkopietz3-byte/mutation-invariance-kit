@@ -87,22 +87,25 @@ export interface AssertInvarianceOptions<Input, Output> {
 }
 
 const ignore = (): void => undefined;
+const promiseThen = Reflect.get(Promise.prototype, "then") as (...args: unknown[]) => unknown;
 
 /**
- * True if `value` is a Promise or other thenable. A thenable we are about to
- * refuse is also detached: a rejecting Promise nobody handles would otherwise
- * end the Node process with an unhandled rejection, hiding the TypeError we
- * throw about it. Its `then` is called once with no-op handlers, and a `then`
- * that throws is ignored.
+ * True if `value` is a Promise or other thenable. A genuine Promise we are
+ * about to refuse is also detached: a rejecting Promise nobody handles would
+ * otherwise end the Node process with an unhandled rejection, hiding the
+ * TypeError we throw about it. That is done with the built-in `Promise.prototype.then`
+ * and no-op handlers; the value's own `then` is never called.
  */
 function refuseThenable(value: unknown): boolean {
   if ((typeof value !== "object" && typeof value !== "function") || value === null) return false;
-  const then: unknown = (value as { then?: unknown }).then;
-  if (typeof then !== "function") return false;
+  if (typeof (value as { then?: unknown }).then !== "function") return false;
   try {
-    Reflect.apply(then as (...args: unknown[]) => unknown, value, [ignore, ignore]);
+    // The built-in then, not the value's own: it succeeds only on a genuine
+    // Promise (any subclass), and a thenable's own then() is never called,
+    // because calling it could itself create a rejecting Promise nobody handles.
+    Reflect.apply(promiseThen, value, [ignore, ignore]);
   } catch {
-    // The caller gets the TypeError below; a hostile then() adds nothing to it.
+    // Not a genuine Promise: nothing to detach. The caller gets the TypeError below.
   }
   return true;
 }
@@ -142,6 +145,7 @@ function snapshotScenarios<Input>(scenarios: unknown): MutationScenario<Input>[]
   }
   const list: MutationScenario<Input>[] = [];
   const used = new Set<string>();
+  const nextSuffix = new Map<string, number>();
   for (let index = 0; index < length; index += 1) {
     if (!hasOwn(scenarios, index)) {
       throw new TypeError(`assertInvariance: scenarios[${index}] is missing (a hole in a sparse array). Pass a dense array.`);
@@ -159,7 +163,14 @@ function snapshotScenarios<Input>(scenarios: unknown): MutationScenario<Input>[]
     // Two scenarios with one name (for example a preset given a repeated value)
     // would be indistinguishable in `failures`, `vacuous` and error messages.
     let unique = name;
-    for (let copy = 2; used.has(unique); copy += 1) unique = `${name} (${copy})`;
+    if (used.has(unique)) {
+      // Resume at the next suffix this name has not used, so a long run of one
+      // repeated name stays linear; the loop still skips a name the caller took.
+      let copy = nextSuffix.get(name) ?? 2;
+      while (used.has(`${name} (${copy})`)) copy += 1;
+      unique = `${name} (${copy})`;
+      nextSuffix.set(name, copy + 1);
+    }
     used.add(unique);
     list.push({ name: unique, mutate: mutate as (input: Input) => Input, category });
   }

@@ -1156,3 +1156,88 @@ describe("verdict table 4: review findings on the fast paths and the copy", { ti
     expect(result.failures).toHaveLength(1);
   });
 });
+
+describe("verdict table 5: second review findings", { timeout: 180_000 }, () => {
+  it("P2-1: an Array.prototype index setter cannot swallow the elements of a compared array", () => {
+    const left = Array.from({ length: 101 }, () => 0);
+    const right = Array.from({ length: 101 }, () => 0);
+    right[100] = 1;
+    // Own data properties are created for every element, so an inherited
+    // accessor at index 100 (setter discards, getter returns 0) is never reached.
+    Object.defineProperty(Array.prototype, 100, { get: () => 0, set: () => undefined, configurable: true });
+    let equal: boolean;
+    let copyKeepsLast: unknown;
+    try {
+      equal = deepEqual(left, right);
+      copyKeepsLast = (snapshot(right) as unknown[])[100];
+    } finally {
+      delete (Array.prototype as unknown as Record<number, unknown>)[100];
+    }
+    expect(equal).toBe(false);
+    expect(copyKeepsLast).toBe(1);
+  });
+
+  const harness = (body: string): string => `
+    import { assertInvariance } from "./lib/index.js";
+    const base = { v: 1 };
+    const scenarios = [{ name: "s", mutate: (x) => ({ v: x.v + 1 }) }];
+    let outcome = "no error";
+    let thenCalls = 0;
+    try {
+      ${body}
+    } catch (error) {
+      outcome = error.constructor.name + ": " + error.message.slice(0, 80);
+    }
+    console.log(outcome);
+    console.log("then calls: " + thenCalls);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    console.log("still alive");
+  `;
+
+  const survives = (name: string, body: string, thenCalls = 0): void => {
+    it(`P2-2: ${name}: the documented error is thrown, the process survives, a custom then() is never called`, () => {
+      const result = runChild(harness(body));
+      expect(result.stderr).not.toMatch(/Unhandled|unhandled|boom/);
+      expect(result.stdout).toMatch(/^TypeError: .*Promise/m);
+      expect(result.stdout).toContain(`then calls: ${thenCalls}`);
+      expect(result.stdout).toContain("still alive");
+      expect(result.code).toBe(0);
+    });
+  };
+
+  survives(
+    "an async then() that throws",
+    `assertInvariance(() => ({ async then() { thenCalls += 1; throw new Error("boom"); } }), base, scenarios);`,
+  );
+  survives(
+    "a then() that returns a rejecting Promise",
+    `assertInvariance(() => ({ then() { thenCalls += 1; return Promise.reject(new Error("boom")); } }), base, scenarios);`,
+  );
+  survives(
+    "mutate returning an async thenable",
+    `assertInvariance((x) => x.v, base, [{ name: "s", mutate: () => ({ async then() { thenCalls += 1; throw new Error("boom"); } }) }]);`,
+  );
+  survives(
+    "a Promise subclass that rejects",
+    `class Later extends Promise {} assertInvariance(() => Later.reject(new Error("boom")), base, scenarios);`,
+  );
+  survives(
+    "a native rejecting Promise",
+    `assertInvariance(() => Promise.reject(new Error("boom")), base, scenarios);`,
+  );
+
+  it("P3: 8,000 scenarios sharing one name are renamed in near-linear time", () => {
+    const base = { v: 1 };
+    const same: MutationScenario<typeof base> = { name: "repeat", mutate: (input) => ({ ...input }) };
+    const scenarios = Array.from({ length: 8000 }, () => same);
+    const run = () => assertInvariance((input: typeof base) => input.v, base, scenarios);
+    const used = process.cpuUsage();
+    const result = run();
+    const spent = process.cpuUsage(used);
+    expect(result.vacuous).toHaveLength(8000);
+    expect(new Set(result.vacuous).size).toBe(8000);
+    expect(result.vacuous[0]).toBe("repeat");
+    expect(result.vacuous[7999]).toBe("repeat (8000)");
+    expect((spent.user + spent.system) / 1000).toBeLessThan(2500);
+  });
+});

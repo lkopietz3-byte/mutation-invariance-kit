@@ -489,11 +489,11 @@ part of `npm test`.
   object (Node 26 on an Apple-silicon laptop, measured on 40,000 fresh
   objects). Arrays and typed arrays with no extra keys take a fast path.
   Measured as CPU time on a busy machine (so read these as upper bounds),
-  Node 26: comparing two arrays of 1,000,000 numbers took about 0.13 s (0.27 s
-  before the fast path), two `Float64Array`s of 1,000,000 about 0.08 s (0.19 s
+  Node 26: comparing two arrays of 1,000,000 numbers took about 0.27 s (the same
+  as before the fast path), two `Float64Array`s of 1,000,000 about 0.09 s (0.19 s
   before). A whole `assertInvariance` run with one scenario and a
-  1,000,000-number array as both input and output took about 0.75 s (2.2 s
-  before); with a `Float64Array`, about 0.45 s (1.1 s before). Arrays of objects
+  1,000,000-number array as both input and output took about 1.3 s (2.5 s
+  before, same session); with a `Float64Array`, about 0.45 s (0.93 s before). Arrays of objects
   are bound by the per-object cost above, not by the fast path. Object `Set`
   and `Map` matching without `orderSensitive` is quadratic.
 - **It is a regression test, not an audit.** Re-run it in CI whenever the
