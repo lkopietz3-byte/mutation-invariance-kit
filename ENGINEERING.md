@@ -19,6 +19,10 @@
    methods. The internal snapshot copies everything `deepEqual` compares for
    the kinds it copies. `src/deepEqual.ts` and `src/snapshot.ts` are
    byte-identical to payout-invariance-kit's copies.
+   By default `deepEqual` ignores the order of `Map` entries, `Set` members and
+   object keys; `{ orderSensitive: true }` makes it count. The comparison and
+   the copy use explicit work lists, so depth is limited by memory; a stack
+   overflow is never turned into "different".
 5. No path-string parsing; no caller-supplied key is used to write into an
    object. The internal snapshot writes keys with `Object.defineProperty`.
 6. Zero runtime dependencies (`dependencies` stays empty).
@@ -36,8 +40,13 @@ checks the file list and `api-surface.json`, runs `scripts/consumer-probe.mjs`
 (imports both entry points by name), and compiles `scripts/consumer-probe.mts`
 under strict NodeNext.
 
-Tests live next to the code (`src/*.test.ts`) and in `examples/`. Every bug
-fix has a regression test that failed on the code before the fix.
+Tests live next to the code (`src/*.test.ts`), in `examples/`, and in `test/`.
+`test/verdict-table.test.ts` is the verdict regression table (named cases that
+assert the verdict a user should get, plus guards and probes);
+`test/fast-path-differential.test.ts` checks the array and typed array fast
+paths against a plain key-by-key reference. Every bug fix has a regression test
+that failed on the code before the fix. Speed checks use CPU time, not wall
+time, so a busy machine does not fail them.
 
 `src/deepEqual.differential.test.ts` fuzzes `deepEqual` against `node:util`'s
 `isDeepStrictEqual` (imported in the test only) on 6,000 seeded pairs, plus a

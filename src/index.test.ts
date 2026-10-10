@@ -312,7 +312,7 @@ describe("assertInvariance: when fn, mutate or cleanup throws", () => {
           if (cleanups === 2) throw new Error("reset failed");
         },
       }),
-    ).toThrow(/cleanup\(\) threw after on the mutated input for scenario "zip -> 11111".*reset failed/);
+    ).toThrow(/cleanup\(\) threw after fn ran on the mutated input for scenario "zip -> 11111".*reset failed/);
   });
 });
 

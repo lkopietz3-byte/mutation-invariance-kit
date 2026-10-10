@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `orderSensitive` option (default `false`) on `assertInvariance` and `deepEqual(a, b, options?)`, and the exported type `DeepEqualOptions`. With it, `Map` entry order, `Set` member order and object key order count. The default comparison still ignores that order, so a ranking returned as a `Map`, `Set` or keyed object that reorders after a mutation passes unless you pass `orderSensitive: true` or return an array.
+
+### Fixed
+
+- A rejecting Promise returned by `fn`, `mutate` or `cleanup` (or by `isEqual` or `hasChanged`) ended the Node process with an unhandled rejection even though `assertInvariance` threw its documented `TypeError`. The refused Promise now gets a no-op rejection handler first.
+- Deeply nested values: two identical chains about 5,000 levels deep compared as different, because a stack overflow while classifying a value was read as "not comparable"; around 10,000 levels a raw `RangeError` escaped with no scenario named. `deepEqual` and the internal copy now walk objects, arrays, `Map` values, `Error` causes and (with `orderSensitive`) `Map`/`Set` members with an explicit work list, so depth is limited by memory. A stack overflow is never read as "different": where recursion remains (object-keyed `Set` members and `Map` keys matched without `orderSensitive`), `deepEqual` throws the `RangeError` and `assertInvariance` rethrows it as an error that names the scenario.
+- Comparing and copying large arrays and typed arrays was slow because every element went through a per-key path. Arrays and typed arrays with no extra keys now take a fast path with identical results (holes, non-enumerable elements, extra named keys and symbols still compare exactly as before). Measured CPU time for a 1,000,000 element `Float64Array` run through `assertInvariance`: about 1.1 s before, 0.16 s after; for a 1,000,000 number array, 2.2 s before, 0.7 s after.
+- The message for a failing `cleanup()` read "threw after on the baseline input"; it now reads "threw after fn ran on the baseline input".
+- Scenarios that share a name (for example a preset given a repeated value) were indistinguishable in `failures`, `vacuous` and error messages. Later duplicates are now named `name (2)`, `name (3)` and so on.
+
+### Changed
+
+- The checks for in-place edits (to `baseInput` and to the baseline output) are now always order-sensitive, so an `fn` or `mutate` that reorders a `Map`, `Set` or object it was given in place is reported. Before, that reorder went unnoticed.
+- With `orderSensitive: true`, the default `hasChanged` also treats a mutation that only reorders a `Map`, `Set` or object as a change, not a vacuous scenario.
+- `deepEqual` no longer reads a `RangeError` raised while classifying a value as "not comparable"; it propagates.
+- Duplicate scenario names are renamed as described under Fixed (the first keeps its name).
+
+### Documented
+
+- Honest limits now say that the default comparison ignores the order of `Map` entries, `Set` members and object keys, and what to do about it.
+- A mutation that rebuilds an opaque value (a class with a `Symbol.toStringTag`, a `URL`) unchanged still looks like a change to the default `hasChanged`, so it is not reported as vacuous. Use a custom `hasChanged`.
+- A change made in place to a non-enumerable property is not detected, because the comparison reads enumerable properties only. The README no longer implies that every in-place change throws.
+- The Cost note has measured numbers for large arrays and typed arrays.
+
 ## [0.2.1] - 2026-10-07
 
 No change to the library's behavior or API.

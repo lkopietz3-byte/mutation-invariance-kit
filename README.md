@@ -147,9 +147,17 @@ Options:
 - `cleanup()` runs after every `fn` call, even when `fn` throws. Only needed
   when `fn` touches external state that must be reset between calls. Must be
   synchronous.
+- `orderSensitive` (boolean, default `false`) makes the order of a `Map`'s
+  entries, a `Set`'s members and an object's keys count in the default
+  comparisons (`isEqual` and `hasChanged`). **If your function returns a Map, Set or object in rank order, pass orderSensitive: true or return an array.**
+  By default a ranking returned as a `Map`, `Set` or keyed object that
+  reorders after a mutation passes, because those three are compared by
+  lookup, not by order (an array is always compared in order). The check for
+  in-place edits is always order-sensitive. A custom `isEqual` or `hasChanged`
+  is used as written. Must be a boolean.
 
-`opts` must be a plain object (or omitted), and each hook must be a function
-or undefined; each is read once.
+`opts` must be a plain object (or omitted), each hook must be a function or
+undefined, and `orderSensitive` a boolean or undefined; each is read once.
 
 It throws instead of returning a result when the run cannot be trusted:
 
@@ -158,16 +166,19 @@ It throws instead of returning a result when the run cannot be trusted:
 | `scenarios` is not an array, is empty, has a hole (a sparse array), or has an entry without a string `name` and a `mutate` function; `fn` is not a function; `opts` is not a plain object or a hook is not a function | `TypeError` or `Error` before `fn` runs |
 | `fn` throws (baseline or mutated input) | `Error` naming the scenario, original error as `cause`. Never counted as "no difference". |
 | `mutate` throws | `Error` naming the scenario, original error as `cause` |
-| `fn` or `mutate` returns a Promise | `TypeError` |
+| `fn` or `mutate` returns a Promise | `TypeError`. The Promise is detached first (a no-op rejection handler is attached), so a rejection does not also end the Node process as an unhandled rejection. |
 | `isEqual` or `hasChanged` returns a non-boolean; `cleanup` returns a Promise | `TypeError` |
 | `cleanup` throws | `Error`; if `fn` also threw, `fn`'s error is thrown and mentions the cleanup failure |
-| `fn` or `mutate` modified `baseInput` in place | `Error` naming who did it |
+| `fn` or `mutate` modified `baseInput` in place | `Error` naming who did it (enumerable data only; see below) |
 | a later `fn` call modified the object `fn` returned for the baseline | `Error` naming the scenario |
+| a value is nested so deeply that copying or comparing it overflowed the stack (only the shapes listed under `deepEqual`) | `Error` naming the scenario or step, original `RangeError` as `cause`. Never reported as a difference. |
 
 `scenarios` is validated with one indexed pass before anything runs; each
 scenario's `name`, `mutate` and `category` are read once, and the run uses
 exactly the scenarios that were checked (an overridden `Symbol.iterator` on
-the array does not matter). Scenario names and thrown messages are escaped
+the array does not matter). If two scenarios share a name (a preset given a
+repeated value), the later ones are renamed `name (2)`, `name (3)` and so on,
+so `failures`, `vacuous` and error messages point at one scenario each. Scenario names and thrown messages are escaped
 in error text (newlines, control and bidi characters).
 
 In-place changes are found by comparing against a deep copy taken before the
@@ -177,16 +188,22 @@ arrays, including the extra own properties `deepEqual` compares (such as a
 `label` on a typed array). Changes inside values it keeps by reference
 (functions, `Error`, boxed primitives, `DataView`, `SharedArrayBuffer`,
 `Promise`, private `#fields`, and other values `deepEqual` cannot inspect)
-are not detected.
+are not detected. A change made in place to a non-enumerable property
+(`Object.defineProperty(input, "x", { enumerable: false, ... })`) is not
+detected either, because the comparison reads enumerable properties only. The
+in-place check does notice a `Map`, `Set` or object whose entries or keys were
+reordered in place.
 
 The library never writes to `baseInput` or to anything `fn` returns, and never
 clones the values it passes to your code. It uses no randomness and no clock.
 
-### `deepEqual(a, b)`
+### `deepEqual(a, b, options?)`
 
 The default comparator, exported for use in your own `isEqual` or
 `hasChanged`. It fails closed: when it cannot show two values are equal, it
-says they are different.
+says they are different. `options` is a plain object or omitted:
+`{ orderSensitive?: boolean }` (see below); anything else throws a
+`TypeError`.
 
 - Primitives use `Object.is`: `NaN` equals `NaN`; `0` and `-0` are different;
   no floating-point tolerance (`0.1 + 0.2` is not `0.3`).
@@ -205,7 +222,21 @@ says they are different.
   operations, so a masked `Symbol.toStringTag`, a replaced prototype, or an
   overridden `getTime`, `valueOf`, `size`, iterator, `byteLength` or
   `length` cannot hide a difference.
-- Circular references are handled.
+- Order: by default the order of `Map` entries, `Set` members and object
+  keys is **not** compared, so `new Set(["a", "b"])` equals `new Set(["b",
+  "a"])` and `{ a: 1, b: 2 }` equals `{ b: 2, a: 1 }`. That keeps a lookup
+  table whose insertion order varies harmlessly from failing. Pass
+  `{ orderSensitive: true }` to make that order count (symbol keys and the
+  extra keys of an array included). If your function returns a Map, Set or object in rank order, pass orderSensitive: true or return an array.
+  Array and typed array elements are always compared in order.
+- Circular references are handled. Nesting depth is limited by memory, not
+  the call stack, for objects, arrays, `Map` values and `Error` causes, and
+  for `Map`/`Set` members when `orderSensitive` is true. Matching object-keyed
+  `Set` members and `Map` keys without `orderSensitive` still recurses, so
+  thousands of such collections nested inside one another throw a
+  `RangeError` (a stack overflow) instead of answering. `deepEqual` never
+  turns a stack overflow into "different"; `assertInvariance` wraps it in an
+  error that names the scenario.
 - Not comparable, so equal only to themselves: functions, `Promise`,
   `WeakMap`, `WeakSet`, `WeakRef`, `URL`, any object with its own or an
   inherited string `Symbol.toStringTag` that is not one of the built-ins
@@ -301,8 +332,8 @@ interface InvarianceResult<Input, Output> {
 }
 ```
 
-Also exported as types: `AssertInvarianceOptions`,
-`ProtectedAttributeScenariosOptions`, `GeographyScenariosOptions`, and
+Also exported as types: `AssertInvarianceOptions`, `DeepEqualOptions`
+(`{ orderSensitive?: boolean }`), `ProtectedAttributeScenariosOptions`, `GeographyScenariosOptions`, and
 `PriceScenariosOptions` (each `{ fieldLabel?: string }`).
 
 ### Async functions
@@ -412,6 +443,17 @@ part of `npm test`.
   That can produce failures you need to handle with `isEqual`.
 - **The default comparison can still produce false passes** in these known
   cases:
+  - **Order of a `Map`, `Set` or object.** By default only the members are
+    compared, not their order, so a ranking returned as a `Map`, `Set` or
+    keyed object (`{ a: true, b: true }`) that flips from `[b, a]` to
+    `[a, b]` passes. An array of the same ranking fails, as it should. If your function returns a Map, Set or object in rank order, pass orderSensitive: true or return an array.
+  - **A mutation that rebuilds an opaque value unchanged.** The default
+    `hasChanged` calls a mutation vacuous only when the whole input is
+    `deepEqual` to the base. A value `deepEqual` cannot inspect (a class with a
+    `Symbol.toStringTag`, a `URL`, a `Promise`) is equal only to itself, so a
+    mutation that rebuilds an opaque value identically looks like a change and
+    its scenario runs and passes although nothing changed. Pass a `hasChanged`
+    that compares the field you meant to change.
   - **Private `#fields`.** JavaScript does not let code outside a class read
     its private fields, so two instances whose state lives only in `#fields`
     (exposed through getters) compare equal whenever their public properties
@@ -436,7 +478,8 @@ part of `npm test`.
 - **In-place change detection has blind spots:** values kept by reference
   (functions, `Error`, boxed primitives, `DataView`, `SharedArrayBuffer`,
   `Promise`, private fields) are not deep-copied, so an edit inside one of
-  them is not reported.
+  them is not reported. A non-enumerable property changed in place is not
+  reported either.
 - **It trusts your getters and setters.** The preset check confirms the value
   landed where `get` reads it; it cannot tell whether `get` reads the field you
   meant.
@@ -444,7 +487,15 @@ part of `npm test`.
   compares them after each call. `deepEqual` checks each object's brand once
   and caches it; that first check costs about 15 to 25 microseconds per
   object (Node 26 on an Apple-silicon laptop, measured on 40,000 fresh
-  objects). Nothing else has been benchmarked.
+  objects). Arrays and typed arrays with no extra keys take a fast path.
+  Measured as CPU time on a busy machine (so read these as upper bounds),
+  Node 26: comparing two arrays of 1,000,000 numbers took about 0.15 s (0.27 s
+  before the fast path), two `Float64Array`s of 1,000,000 about 0.02 s (0.19 s
+  before). A whole `assertInvariance` run with one scenario and a
+  1,000,000-number array as both input and output took about 0.7 s (2.2 s
+  before); with a `Float64Array`, about 0.16 s (1.1 s before). Arrays of objects
+  are bound by the per-object cost above, not by the fast path. Object `Set`
+  and `Map` matching without `orderSensitive` is quadratic.
 - **It is a regression test, not an audit.** Re-run it in CI whenever the
   function changes, and use it alongside domain expertise, not instead of it.
 
