@@ -1406,6 +1406,9 @@ describe("verdict table 5: second review findings", { timeout: 180_000 }, () => 
       d2: new Date(2),
       p12: new Set([1, 2]),
       p21: new Set([2, 1]),
+      om1: new Map([["a", 1]]),
+      om2: new Map([["a", 2]]),
+      om3: new Map([["a", 1]]),
       a12: [1, 2],
       a13: [1, 3],
       a12b: [1, 2],
@@ -1433,10 +1436,18 @@ describe("verdict table 5: second review findings", { timeout: 180_000 }, () => 
         deepEqual(sparseWithExtra, f.dense),
         deepEqual(f.p12, f.p21, { orderSensitive: true }),
         flip.failures.length,
+        deepEqual(f.om1, f.om2, { orderSensitive: true }),
+        deepEqual(f.om1, f.om3, { orderSensitive: true }),
+        deepEqual(f.om1, f.om2),
+        deepEqual(f.om1, f.om3),
+        deepEqual(f.m1, f.m2, { orderSensitive: true }),
       ];
     };
     const expected = battery();
-    expect(expected).toEqual([false, true, false, true, false, false, false, false, false, false, false, false, false, 1]);
+    expect(expected).toEqual([
+      false, true, false, true, false, false, false, false, false, false, false, false, false, 1,
+      false, true, false, true, false,
+    ]);
 
     const tampers: [string, object, PropertyKey, unknown][] = [
       ["Object.is", Object, "is", () => true],
@@ -1504,5 +1515,38 @@ describe("verdict table 5: second review findings", { timeout: 180_000 }, () => 
       "hasOwnProperty",
       "hasOwnProperty (2)",
     ]);
+  });
+
+  it("P1-2: a Proxy that lists an extra key instead of an element key keeps the extra key in the comparison and the copy", () => {
+    const view = (tag: number): number[] =>
+      new Proxy(Object.assign([1], { tag }), { ownKeys: () => ["tag", "length"] });
+    expect(deepEqual(view(1), view(2))).toBe(false);
+    expect(deepEqual(view(1), view(1))).toBe(true);
+    expect(deepEqual(view(1), [1])).toBe(false);
+    const base = { n: 1 };
+    const result = assertInvariance((input: typeof base) => view(input.n), base, [
+      { name: "n -> 2", mutate: () => ({ n: 2 }) },
+    ]);
+    expect(result.failures).toHaveLength(1);
+    // the copy keeps the key too: an in-place change of the tag is noticed
+    const holder = { n: 1, list: view(1) };
+    const edit = (input: typeof holder): number => {
+      (input.list as unknown as { tag: number }).tag = 9;
+      return 1;
+    };
+    expect(() => assertInvariance(edit, holder, [{ name: "s", mutate: (i) => ({ ...i, n: 2 }) }])).toThrow(
+      /modified baseInput in place/,
+    );
+  });
+
+  it("P2-10: an uninspectable exception whose prototype chain loops yields 'not comparable', not a hang", () => {
+    const result = runChild(`
+      import { deepEqual } from "./lib/index.js";
+      const loop = new Proxy({}, { getPrototypeOf: () => loop });
+      const make = () => new Proxy({}, { getPrototypeOf() { throw loop; } });
+      console.log("answer: " + deepEqual(make(), make()));
+    `);
+    expect(result.stdout).toContain("answer: false");
+    expect(result.code).toBe(0);
   });
 });
