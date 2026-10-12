@@ -7,8 +7,13 @@
  * field-path string, so there is no path syntax to get wrong and no property
  * name from the caller is ever used to write into an object.
  */
+import { appendOwn } from "../deepEqual.js";
 import { describeValue, escapeText, hasOwn, isBlank, isPlainRecord } from "../internal.js";
 import type { MutationScenario, ScenarioCategory } from "../types.js";
+
+// Captured once at import (README, Honest limits, "Built-ins and tampering").
+const objectIs = Object.is;
+const isArray = Array.isArray;
 
 /**
  * Throws a TypeError naming `preset` unless `get`, `set`, the values and the
@@ -26,7 +31,7 @@ export function validatePresetArguments<Value>(
 ): { values: Value[]; label: string } {
   if (typeof get !== "function") throw new TypeError(`${preset}: get must be a function.`);
   if (typeof set !== "function") throw new TypeError(`${preset}: set must be a function.`);
-  if (!Array.isArray(substitutionValues)) {
+  if (!isArray(substitutionValues)) {
     throw new TypeError(`${preset}: substitutionValues must be an array of ${valueType}s.`);
   }
   const values: Value[] = [];
@@ -41,7 +46,7 @@ export function validatePresetArguments<Value>(
         `${preset}: substitutionValues[${index}] must be a ${valueType}, got ${value === null ? "null" : typeof value}.`,
       );
     }
-    values.push(value as Value);
+    appendOwn(values, value as Value);
   }
   if (opts !== undefined && !isPlainRecord(opts)) {
     throw new TypeError(`${preset}: opts must be a plain object (or omitted).`);
@@ -61,24 +66,29 @@ export function getSetScenarios<Input, Value>(
   substitutionValues: Value[],
   formatValue: (value: Value) => string,
 ): MutationScenario<Input>[] {
-  return substitutionValues.map((value) => ({
-    name: `${label} -> ${formatValue(value)}`,
-    category,
-    mutate: (input: Input): Input => {
-      const mutated = set(input, value);
-      // Sanity check, not a substitute for assertInvariance's own vacuous
-      // guard: confirm the setter actually wired up to the same field the
-      // getter reads, so a copy-paste bug in the closures fails loudly
-      // here instead of silently producing a vacuous or misleading result.
-      const applied = get(mutated);
-      if (!Object.is(applied, value)) {
-        throw new Error(
-          `${escapeText(label)}: setter did not apply ${escapeText(formatValue(value))} to the input ` +
-            `(get() returned ${describeValue(applied)} right after set()). ` +
-            `Check that your getter and setter closures read/write the same field.`,
-        );
-      }
-      return mutated;
-    },
-  }));
+  const scenarios: MutationScenario<Input>[] = [];
+  for (let index = 0; index < substitutionValues.length; index += 1) {
+    const value = substitutionValues[index] as Value;
+    appendOwn(scenarios, {
+      name: `${label} -> ${formatValue(value)}`,
+      category,
+      mutate: (input: Input): Input => {
+        const mutated = set(input, value);
+        // Sanity check, not a substitute for assertInvariance's own vacuous
+        // guard: confirm the setter actually wired up to the same field the
+        // getter reads, so a copy-paste bug in the closures fails loudly
+        // here instead of silently producing a vacuous or misleading result.
+        const applied = get(mutated);
+        if (!objectIs(applied, value)) {
+          throw new Error(
+            `${escapeText(label)}: setter did not apply ${escapeText(formatValue(value))} to the input ` +
+              `(get() returned ${describeValue(applied)} right after set()). ` +
+              `Check that your getter and setter closures read/write the same field.`,
+          );
+        }
+        return mutated;
+      },
+    });
+  }
+  return scenarios;
 }
