@@ -1550,3 +1550,77 @@ describe("verdict table 5: second review findings", { timeout: 180_000 }, () => 
     expect(result.code).toBe(0);
   });
 });
+
+describe("verdict table 6: fn editing a mutated input in place", () => {
+  const sortsItsArgument = (list: number[]): number[] => {
+    list.sort((a, b) => a - b);
+    return [...list];
+  };
+
+  it("fn that sorts a fresh mutated array in place throws, though the sorted base example hides it", () => {
+    expect(() =>
+      assertInvariance(sortsItsArgument, [1, 2, 3], [{ name: "reverse", mutate: (list) => [...list].reverse() }]),
+    ).toThrow(/scenario "reverse": fn modified the mutated input in place/);
+  });
+
+  it("a nested sort inside rebuilt records throws and names the scenario", () => {
+    const sortsNested = (input: { list: number[] }): number[] => {
+      input.list.sort((a, b) => a - b);
+      return [...input.list];
+    };
+    expect(() =>
+      assertInvariance(sortsNested, { list: [1, 2, 3] }, [{ name: "rebuilt", mutate: () => ({ list: [3, 2, 1] }) }]),
+    ).toThrow(/scenario "rebuilt": fn modified the mutated input in place/);
+  });
+
+  it("the check covers Map, Set and Date held by the mutated input", () => {
+    type Shape = { n: number; m: Map<string, number>; s: Set<number>; d: Date };
+    const base = (): Shape => ({ n: 1, m: new Map([["a", 1]]), s: new Set([1]), d: new Date(1) });
+    const edits: Array<[string, (input: Shape) => void]> = [
+      ["Map", (input) => void input.m.set("b", 2)],
+      ["Set", (input) => void input.s.add(2)],
+      ["Date", (input) => void input.d.setTime(2)],
+    ];
+    for (const [label, edit] of edits) {
+      expect(
+        () =>
+          assertInvariance(
+            (input: Shape) => {
+              if (input.n === 2) edit(input);
+              return 1;
+            },
+            base(),
+            [{ name: "other", mutate: (input) => ({ ...input, n: 2, m: new Map(input.m), s: new Set(input.s), d: new Date(input.d) }) }],
+          ),
+        label,
+      ).toThrow(/fn modified the mutated input in place/);
+    }
+  });
+
+  it("a function that copies before sorting still passes", () => {
+    const copies = (list: number[]): number[] => [...list].sort((a, b) => a - b);
+    const result = assertInvariance(copies, [1, 2, 3], [{ name: "reverse", mutate: (list) => [...list].reverse() }]);
+    expect(result.passed).toBe(true);
+  });
+
+  it("fn that throws on a mutated input still reports the fn error, not an in-place edit", () => {
+    expect(() =>
+      assertInvariance(
+        (list: number[]) => {
+          if (list[0] === 3) {
+            list.sort();
+            throw new Error("boom");
+          }
+          return 1;
+        },
+        [1, 2, 3],
+        [{ name: "reverse", mutate: (list) => [...list].reverse() }],
+      ),
+    ).toThrow(/fn threw on the mutated input/);
+  });
+
+  it("an edit to a vacuous scenario's input is not run, so nothing is checked or flagged", () => {
+    const result = assertInvariance(sortsItsArgument, [1, 2, 3], [{ name: "same", mutate: (list) => [...list] }]);
+    expect(result.vacuous).toEqual(["same"]);
+  });
+});

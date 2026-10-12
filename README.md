@@ -16,6 +16,12 @@ function ignores that input. See [Honest limits](#honest-limits).
 It returns plain data and never calls a test framework itself, so it works
 with vitest, jest, `node:test`, or a plain script.
 
+**Who it is for.** People who write ranking, scoring or decision functions
+in JavaScript or TypeScript and have a stated list of things the output must
+not depend on (a name, a zip code, a sponsored flag, the order of the input).
+It is a regression test you write and run yourself: you choose the mutations,
+and it does not suggest any.
+
 **When not to use it**
 
 - To measure outcomes across a population (disparate impact, approval rates by
@@ -122,7 +128,9 @@ function assertInvariance<Input, Output>(
 
 Runs `fn(baseInput)` once for the baseline, then for each scenario in order
 calls `mutate(baseInput)` once and, if the mutation changed the input, runs
-`fn` on the mutated input and compares the output to the baseline.
+`fn` on the mutated input and compares the output to the baseline. Both the
+base input and each mutated input are checked afterward for in-place edits by
+`fn`.
 
 Returns `{ passed, baseline, failures, vacuous }`:
 
@@ -170,6 +178,7 @@ It throws instead of returning a result when the run cannot be trusted:
 | `isEqual` or `hasChanged` returns a non-boolean; `cleanup` returns a Promise | `TypeError` |
 | `cleanup` throws | `Error`; if `fn` also threw, `fn`'s error is thrown and mentions the cleanup failure |
 | `fn` or `mutate` modified `baseInput` in place | `Error` naming who did it (enumerable data only; see below) |
+| `fn` modified a mutated input in place | `Error` naming the scenario (same detection as for `baseInput`) |
 | a later `fn` call modified the object `fn` returned for the baseline | `Error` naming the scenario |
 | a value is nested so deeply that copying or comparing it overflowed the stack (only the shapes listed under `deepEqual`) | `Error` naming the scenario or step, original `RangeError` as `cause`. Never reported as a difference. |
 
@@ -182,7 +191,11 @@ so `failures`, `vacuous` and error messages point at one scenario each. Scenario
 in error text (newlines, control and bidi characters).
 
 In-place changes are found by comparing against a deep copy taken before the
-first call. The copy covers plain objects, class instances, `arguments`
+first call. `baseInput` is copied once, before anything runs. Each mutated
+input is copied just before `fn` runs on it, so a function that sorts or edits
+its argument is caught on the mutated input too, even when the base example
+happens to be in order already. A vacuous scenario is skipped, so `fn` never
+sees its input and nothing is checked there. The copy covers plain objects, class instances, `arguments`
 objects, arrays, `Map`, `Set`, `Date`, `RegExp`, `ArrayBuffer`, and typed
 arrays, including the extra own properties `deepEqual` compares (such as a
 `label` on a typed array). Changes inside values it keeps by reference
@@ -350,7 +363,8 @@ matter:
   later, so a scorer that keeps returning one shared object is rejected
   instead of making every result look the same.
 - A copy of `baseInput` taken before the first call catches a scorer that
-  edits it in place.
+  edits it in place. Edits to the mutated inputs are not checked in this
+  recipe.
 
 What it does not do: it does not support other output types (score to a
 number, or adapt the recipe with an immediate copy of your output), it does
@@ -479,12 +493,20 @@ part of `npm test`.
   (functions, `Error`, boxed primitives, `DataView`, `SharedArrayBuffer`,
   `Promise`, private fields) are not deep-copied, so an edit inside one of
   them is not reported. A non-enumerable property changed in place is not
-  reported either.
+  reported either. The same blind spots apply to mutated inputs. The check
+  also needs `fn` to actually run on the input: a scenario reported as vacuous
+  is never passed to `fn`, and the async recipe below checks `baseInput` only,
+  not the mutated inputs. Example of what the mutated-input check does catch:
+  `assertInvariance(sortInPlace, [1, 2, 3], [{ name: "reverse", mutate: (a) =>
+  [...a].reverse() }])` throws, because `sortInPlace` sorts the reversed array
+  it is given, even though the base example was in order already.
 - **It trusts your getters and setters.** The preset check confirms the value
   landed where `get` reads it; it cannot tell whether `get` reads the field you
   meant.
-- **Cost:** every run deep-copies `baseInput` and the baseline output and
-  compares them after each call. `deepEqual` checks each object's brand once
+- **Cost:** every run deep-copies `baseInput` and the baseline output, and
+  deep-copies each mutated input before `fn` runs on it, then compares the
+  copies after each call. Large inputs therefore cost roughly one extra copy
+  and comparison per scenario. `deepEqual` checks each object's brand once
   and caches it; that first check costs about 15 to 25 microseconds per
   object (Node 26 on an Apple-silicon laptop, measured on 40,000 fresh
   objects). Arrays and typed arrays with no extra keys take a fast path.

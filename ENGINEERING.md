@@ -8,7 +8,8 @@
    sparse or malformed scenarios, `opts` that is not a plain object or has
    non-function hooks, `fn`/`mutate` throwing or returning a Promise,
    non-boolean comparator results, an async `cleanup`, or in-place changes to
-   `baseInput` or the baseline output. Scenarios are validated with one
+   `baseInput`, to a mutated input (checked after each `fn` call on it), or to
+   the baseline output. Scenarios are validated with one
    indexed pass and the run uses only that snapshot; `opts` is read once.
 3. The library never writes to caller values and uses no randomness or clock.
    Caller text in error messages is escaped.
@@ -65,7 +66,9 @@ documented in the test.
   caches the result; object `Set`/`Map` matching is quadratic.
 - In-place change detection does not see inside values kept by reference
   (functions, `Error`, boxed primitives, `DataView`, `SharedArrayBuffer`,
-  `Promise`, private fields).
+  `Promise`, private fields). It runs on `baseInput` and on each mutated input
+  that `fn` is run on; a vacuous scenario's input is never passed to `fn`, and
+  the README's async recipe checks `baseInput` only.
 - A `Promise` whose prototype was replaced, and a `Proxy` whose traps hide
   both its prototype and its `constructor`, are compared as ordinary
   objects; there is no side-effect-free way to recognize them.
@@ -79,7 +82,7 @@ CI runs [`arethetypeswrong`](https://github.com/arethetypeswrong/arethetypeswron
 (`npm run attw`, which is `attw --pack . --ignore-rules cjs-resolves-to-esm`)
 against the packed tarball after the build step. The `cjs-resolves-to-esm` rule is ignored on
 purpose: this is an ESM-only package (`"type": "module"`, no `require` entry point), so a
-CommonJS consumer must use Node's `require(esm)` support (Node >=20.19 or >=22.12 — see
+CommonJS consumer must use Node's `require(esm)` support (Node >=20.19 or >=22.12, see
 "Runtime support policy" below) rather than a native `require`. A dual CJS+ESM build was
 rejected to avoid the dual-package hazard (two separately-identified copies of the same module,
 with broken `instanceof` checks and duplicated module state across the CJS and ESM entry
@@ -101,7 +104,7 @@ job. (You can also run `npm publish` locally; `prepublishOnly` still guards it.)
 
 npm's unpublish policy is deliberately narrow. Within 72 hours of publishing, a version can be
 unpublished only if no other published package depends on it. After 72 hours, unpublishing also
-requires fewer than 300 downloads in the last week and a single maintainer — most released
+requires fewer than 300 downloads in the last week and a single maintainer; most released
 versions won't qualify either way. A given `name@version` can never be reused, published or
 not, even after an unpublish. Treat unpublish as unavailable: prefer fixing forward with a new
 patch version, and use `npm deprecate <name>@"<range>" "<message>"` to warn consumers off a
@@ -112,7 +115,7 @@ This is a dev-time library with no stored state, so there is nothing else to rol
 ### Runtime support policy
 
 - **Supported (recommended for production):** Node 22 and 24 LTS; Node 26 current.
-- **Compatibility-tested:** Node 20. Node 20 is end-of-life — nodejs.org's release page
+- **Compatibility-tested:** Node 20. Node 20 is end-of-life; nodejs.org's release page
   (<https://nodejs.org/en/about/previous-releases>) lists it as `EOL`, with its final release
   dated Mar 24, 2026. The `compat` job in `verify.yml` still runs on Node 20 to catch
   regressions, but that runtime gets no security fixes upstream; don't run production traffic

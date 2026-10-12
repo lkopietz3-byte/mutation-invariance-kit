@@ -255,6 +255,8 @@ function readOptions(opts: unknown): ReadOptions {
  *   edit; every later scenario starts from the same `baseInput`. In-place
  *   changes inside values the copy keeps by reference (functions, `Error`,
  *   `Promise`, private `#fields`, ...) are not detected.
+ * - `fn` modified a mutated input in place (detected the same way, with a deep
+ *   copy taken just before that call). The error names the scenario.
  * - a later `fn` call modified the object `fn` returned for the baseline.
  * - `isEqual` or `hasChanged` returns anything but a boolean (for example a
  *   Promise), or `cleanup` returns a Promise.
@@ -394,8 +396,18 @@ export function assertInvariance<Input, Output>(
       continue;
     }
 
+    // fn must not edit the mutated input either: an fn that sorts its argument in place
+    // would pass on a base example that is already in order. Copy it before the call and
+    // compare after. (Order counts here, as for baseInput.)
+    const mutatedCopy = guarded(`copying the mutated input for ${label}`, () => snapshot(mutatedInput));
     const actual = callFn(mutatedInput, `on the mutated input for ${label} (it did not throw on the baseline input)`);
     assertBaseUntouched(`${label}: fn`);
+    if (!guarded(`${label}: comparing the mutated input with its copy after fn`, () => deepEqual(mutatedCopy, mutatedInput, strict))) {
+      throw new Error(
+        `assertInvariance: ${label}: fn modified the mutated input in place. fn may not change its ` +
+          `argument (copy before sorting or editing), so the comparison can no longer be trusted.`,
+      );
+    }
     if (!guarded(`${label}: comparing the baseline output with its copy`, () => deepEqual(baselineCopy, baseline, strict))) {
       throw new Error(
         `assertInvariance: fn modified its earlier (baseline) output in place during ${label}. ` +

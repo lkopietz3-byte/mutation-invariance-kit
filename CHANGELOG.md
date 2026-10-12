@@ -6,8 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - unreleased
+
+### Breaking changes
+
+Code that passed on 0.2.1 can now throw or report differently. Each item has a one-line fix.
+
+- `assertInvariance` now throws when `fn` edits a mutated input in place (for example `fn` sorts its argument and the scenario's `mutate` returned a fresh, out-of-order array). 0.2.1 only checked `baseInput`, so a function that sorts in place passed whenever the base example was already in order. Migration: copy before sorting or editing (`[...list].sort()`), as you already do for `baseInput`.
+- The in-place checks (on `baseInput`, on mutated inputs and on the baseline output) are now order-sensitive, so an `fn` or `mutate` that reorders a `Map`, `Set` or object in place throws; before, that went unnoticed. Migration: do not reorder the argument in place; copy it first.
+- `deepEqual` no longer treats a `RangeError` raised while classifying a value as "not comparable"; it throws. `assertInvariance` rethrows it as an error that names the scenario. Migration: flatten very deep nesting, or pass your own `isEqual` and `hasChanged`.
+- Scenarios that share a name are renamed `name (2)`, `name (3)` and so on in `failures`, `vacuous` and error messages (the first keeps its name). Migration: if you match on a scenario name from a repeated preset value, match on the suffixed name or give the scenarios distinct names.
+- Two verdicts that were wrong now change: two identical chains about 5,000 levels deep now compare equal (they compared different), and a Proxy array that hides an extra key no longer compares equal to an array without it. Migration: none unless you relied on the old wrong answer.
+- The message for a failing `cleanup()` now reads "threw after fn ran on the baseline input". Migration: update any test that matches the old text.
+
 ### Added
 
+- Edits that `fn` makes to a mutated input are now detected (see Breaking changes). Each mutated input is deep-copied just before `fn` runs on it and compared afterward. The run costs roughly one extra copy and comparison per non-vacuous scenario.
 - `orderSensitive` option (default `false`) on `assertInvariance` and `deepEqual(a, b, options?)`, and the exported type `DeepEqualOptions`. With it, `Map` entry order, `Set` member order and object key order count. The default comparison still ignores that order, so a ranking returned as a `Map`, `Set` or keyed object that reorders after a mutation passes unless you pass `orderSensitive: true` or return an array.
 
 ### Fixed
@@ -37,6 +51,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Documented
 
+- Honest limits now say that the mutated-input check needs `fn` to run on the input (a vacuous scenario's input is never passed to `fn`), has the same by-reference blind spots as the `baseInput` check, and is not part of the README's async recipe, which checks `baseInput` only.
+- The README opens with who the kit is for.
 - Honest limits now say that the default comparison ignores the order of `Map` entries, `Set` members and object keys, and what to do about it.
 - A mutation that rebuilds an opaque value (a class with a `Symbol.toStringTag`, a `URL`) unchanged still looks like a change to the default `hasChanged`, so it is not reported as vacuous. Use a custom `hasChanged`.
 - A change made in place to a non-enumerable property is not detected, because the comparison reads enumerable properties only. The README no longer implies that every in-place change throws.
