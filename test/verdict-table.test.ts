@@ -391,7 +391,9 @@ describe("verdict table 1e: dense arrays and typed arrays of 1,000,000 elements"
         { name: "relabel", mutate: (input) => ({ ...input, label: "y" }) },
       ]);
     expect(run().passed).toBe(true);
-    expect(bestOf(3, run)).toBeLessThan(2000);
+    // About 1.1 s of CPU on Node 26 and 2.6 s on Node 20 in CI; a quadratic slip on
+    // 1,000,000 elements would take far longer than this bound.
+    expect(bestOf(3, run)).toBeLessThan(5000);
   });
 
   it("assertInvariance with a 1,000,000 element typed array input and output stays fast", () => {
@@ -401,7 +403,9 @@ describe("verdict table 1e: dense arrays and typed arrays of 1,000,000 elements"
         { name: "relabel", mutate: (input) => ({ ...input, label: "y" }) },
       ]);
     expect(run().passed).toBe(true);
-    expect(bestOf(3, run)).toBeLessThan(2000);
+    // About 1.1 s of CPU on Node 26 and 2.6 s on Node 20 in CI; a quadratic slip on
+    // 1,000,000 elements would take far longer than this bound.
+    expect(bestOf(3, run)).toBeLessThan(5000);
   });
 
   it("an array of 50,000 small objects compares and copies", () => {
