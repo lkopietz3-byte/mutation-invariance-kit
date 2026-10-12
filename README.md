@@ -500,6 +500,12 @@ part of `npm test`.
   `assertInvariance(sortInPlace, [1, 2, 3], [{ name: "reverse", mutate: (a) =>
   [...a].reverse() }])` throws, because `sortInPlace` sorts the reversed array
   it is given, even though the base example was in order already.
+- **Two exotic inputs can still trip the checks.** A `Proxy` over a plain
+  object that lists numeric keys in reverse order is copied in numeric order,
+  so the in-place check reports an edit that did not happen; use a plain
+  object. And refusing a `Promise` subclass whose species constructor builds a
+  rejecting child `Promise` can leave that child unhandled; do not pass such a
+  class.
 - **It trusts your getters and setters.** The preset check confirms the value
   landed where `get` reads it; it cannot tell whether `get` reads the field you
   meant.
