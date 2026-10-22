@@ -1,6 +1,8 @@
-# mutation-invariance-kit
+# @evidencekit/input-invariance
 
-**[Try it in your browser →](https://lkopietz3-byte.github.io/honesty-kits/#mutation-invariance-kit)** · Part of [honesty kits](https://github.com/lkopietz3-byte/honesty-kits), a family of small checks for the claims an AI product makes.
+Formerly published as `@evidencekit/input-invariance`.
+
+**[Try it in your browser →](https://evidencekit.github.io/#input-invariance)** · Part of [Evidence Kit](https://github.com/evidencekit), checks that tie AI output and public claims back to their evidence.
 
 A small, zero-dependency TypeScript library for checking whether a decision,
 score, or ranking function's output changes when you change an input it is
@@ -37,7 +39,7 @@ and it does not suggest any.
 ## Install
 
 ```bash
-npm install --save-dev mutation-invariance-kit
+npm install --save-dev @evidencekit/input-invariance
 ```
 
 Or build from source: clone the repository and run `npm ci && npm run build`.
@@ -48,8 +50,8 @@ load it. `require()` also works where Node can `require(esm)`:
 
 | How you load it | Node 20.19+ | Node 22.12+ | Node 24 and 26 | Older Node 20 or 22 |
 | --- | --- | --- | --- | --- |
-| `import { assertInvariance } from "mutation-invariance-kit"` | works | works | works | works |
-| `require("mutation-invariance-kit")` or `require("mutation-invariance-kit/presets")` | works | works | works | fails (no `require(esm)`); use `import()` |
+| `import { assertInvariance } from "@evidencekit/input-invariance"` | works | works | works | works |
+| `require("@evidencekit/input-invariance")` or `require("@evidencekit/input-invariance/presets")` | works | works | works | fails (no `require(esm)`); use `import()` |
 
 ESM package; `require()` works on Node >=20.19 / >=22.12. Recommended runtimes
 are Node 22 and 24 (LTS) and Node 26 (current). Node 20 is end-of-life. CI
@@ -62,8 +64,8 @@ compatibility testing, not a recommendation. `engines` in `package.json` is
 ## Quickstart
 
 ```ts
-import { assertInvariance } from "mutation-invariance-kit";
-import { geographyScenarios } from "mutation-invariance-kit/presets";
+import { assertInvariance } from "@evidencekit/input-invariance";
+import { geographyScenarios } from "@evidencekit/input-invariance/presets";
 
 interface Application {
   name: string;
@@ -111,8 +113,8 @@ The package has two entry points. The root exports everything; the
 types (the same functions, not copies).
 
 ```ts
-import { assertInvariance, deepEqual } from "mutation-invariance-kit";
-import { protectedAttributeScenarios, geographyScenarios, priceScenarios } from "mutation-invariance-kit/presets";
+import { assertInvariance, deepEqual } from "@evidencekit/input-invariance";
+import { protectedAttributeScenarios, geographyScenarios, priceScenarios } from "@evidencekit/input-invariance/presets";
 ```
 
 ### `assertInvariance(fn, baseInput, scenarios, opts?)`
@@ -374,8 +376,8 @@ as-is without naming the scenario. It cannot see side effects outside
 `baseInput` (a cache, a database row).
 
 ```ts
-import { assertInvariance, deepEqual } from "mutation-invariance-kit";
-import type { InvarianceResult, MutationScenario } from "mutation-invariance-kit";
+import { assertInvariance, deepEqual } from "@evidencekit/input-invariance";
+import type { InvarianceResult, MutationScenario } from "@evidencekit/input-invariance";
 
 /**
  * Check an async scorer that resolves to a number.
@@ -559,9 +561,9 @@ part of `npm test`.
 - **It is a regression test, not an audit.** Re-run it in CI whenever the
   function changes, and use it alongside domain expertise, not instead of it.
 
-## Relationship to payout-invariance-kit
+## Relationship to @evidencekit/payout-invariance
 
-[`payout-invariance-kit`](https://github.com/lkopietz3-byte/payout-invariance-kit)
+[`@evidencekit/payout-invariance`](https://github.com/evidencekit/payout-invariance)
 applies the same idea to one axis: whether a ranking depends on which option
 pays the operator more. It also has a static check, `assertNoPayoutImports`.
 Use it for that axis; use this kit for any other "should not depend on X"

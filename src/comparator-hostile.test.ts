@@ -1,7 +1,7 @@
 /**
  * Shared regression suite for the comparator (`deepEqual.ts`) and the
  * in-place-edit snapshot (`snapshot.ts`). The same file lives in
- * payout-invariance-kit and mutation-invariance-kit; only the two import
+ * @evidencekit/payout-invariance and @evidencekit/input-invariance; only the two import
  * lines differ.
  *
  * Built-ins must be recognized by what they are (intrinsic brand checks),

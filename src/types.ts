@@ -1,5 +1,5 @@
 /**
- * mutation-invariance-kit — types
+ * @evidencekit/input-invariance — types
  * --------------------------------
  * Generic types shared by the core engine (assertInvariance) and every
  * preset scenario generator in `presets/`. Nothing in this file is
@@ -33,7 +33,7 @@ export type ScenarioCategory =
  * reported as `vacuous`.
  *
  * The shape (`name` + `mutate`) matches `PayoutMutationScenario` in the
- * sibling `payout-invariance-kit`, plus the optional `category`.
+ * sibling `@evidencekit/payout-invariance`, plus the optional `category`.
  */
 export interface MutationScenario<Input> {
   /** Short, descriptive name for this mutation — shown in failure output. */

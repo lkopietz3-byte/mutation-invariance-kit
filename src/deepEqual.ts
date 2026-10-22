@@ -1,7 +1,7 @@
 /**
  * Structural deep equality, used as the default output comparator and the
  * default "did the mutation change anything" check. This file is shared,
- * byte for byte, by payout-invariance-kit and mutation-invariance-kit.
+ * byte for byte, by @evidencekit/payout-invariance and @evidencekit/input-invariance.
  *
  * The design rule is to fail closed: when two values cannot be shown equal,
  * they are reported as different. A false "different" is loud (the check

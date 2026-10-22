@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-22
+
+No change to the library's behavior or API.
+
+### Changed
+
+- Renamed the package from `mutation-invariance-kit` to `@evidencekit/input-invariance`. Install the new name and update your imports (`@evidencekit/input-invariance` and `@evidencekit/input-invariance/presets`). The repository moved to `evidencekit/input-invariance`.
+
 ## [0.3.0] - unreleased
 
 ### Breaking changes

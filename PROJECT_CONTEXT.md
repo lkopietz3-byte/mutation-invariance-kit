@@ -1,18 +1,18 @@
-# Project context: mutation-invariance-kit
+# Project context: @evidencekit/input-invariance
 
 Mapped on **2026-09-26** from connected GitHub, Vercel, and Supabase metadata. This file is a navigation aid; verify current code and service settings before acting.
 
 ## Identity and repository settings
 
-- Repository: [lkopietz3-byte/mutation-invariance-kit](https://github.com/lkopietz3-byte/mutation-invariance-kit)
+- Repository: [evidencekit/input-invariance](https://github.com/evidencekit/input-invariance)
 - Purpose: A library for testing whether a decision, score, or ranking changes when a claimed-irrelevant input is changed, in the scenarios you supply. A pass covers only those scenarios.
 - GitHub visibility: **public**; default branch: **`main`**; archived: **no**.
 - Product stage, owner, production health, and GitHub protection/settings beyond the fields above: **not verified**.
 
 ## Starting points
 
-- Purpose source: [README.md](https://github.com/lkopietz3-byte/mutation-invariance-kit/blob/main/README.md)
-- [package.json](https://github.com/lkopietz3-byte/mutation-invariance-kit/blob/main/package.json) contains scripts and declared dependencies; check the current file before using commands.
+- Purpose source: [README.md](https://github.com/evidencekit/input-invariance/blob/main/README.md)
+- [package.json](https://github.com/evidencekit/input-invariance/blob/main/package.json) contains scripts and declared dependencies; check the current file before using commands.
 
 ## Service map
 

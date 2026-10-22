@@ -3,7 +3,7 @@
  * so the invariance check can notice when the function under test or
  * `mutate` modified the caller's base input (or an earlier output) in place:
  * it compares the copy to the live value with `deepEqual`. This file is
- * shared, byte for byte, by payout-invariance-kit and mutation-invariance-kit.
+ * shared, byte for byte, by @evidencekit/payout-invariance and @evidencekit/input-invariance.
  *
  * It copies plain and class objects (prototype preserved), `arguments`
  * objects, arrays (holes preserved), `Map`, `Set`, `Date`, `RegExp`,

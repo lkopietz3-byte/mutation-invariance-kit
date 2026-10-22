@@ -19,7 +19,7 @@
    through intrinsics, never through `Symbol.toStringTag` or the value's own
    methods. The internal snapshot copies everything `deepEqual` compares for
    the kinds it copies. `src/deepEqual.ts` and `src/snapshot.ts` are
-   byte-identical to payout-invariance-kit's copies.
+   byte-identical to @evidencekit/payout-invariance's copies.
    By default `deepEqual` ignores the order of `Map` entries, `Set` members and
    object keys; `{ orderSensitive: true }` makes it count. The comparison and
    the copy use explicit work lists, so depth is limited by memory; a stack

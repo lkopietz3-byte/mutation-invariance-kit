@@ -1,5 +1,5 @@
 /**
- * mutation-invariance-kit
+ * @evidencekit/input-invariance
  * ------------------------
  * Change one thing a function claims not to depend on, re-run the function,
  * and compare the output to the unmutated baseline. `assertInvariance` is the

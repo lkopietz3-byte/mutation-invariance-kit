@@ -1,12 +1,12 @@
 {
-  "mutation-invariance-kit": [
+  "@evidencekit/input-invariance": [
     "assertInvariance",
     "deepEqual",
     "geographyScenarios",
     "priceScenarios",
     "protectedAttributeScenarios"
   ],
-  "mutation-invariance-kit/presets": [
+  "@evidencekit/input-invariance/presets": [
     "geographyScenarios",
     "priceScenarios",
     "protectedAttributeScenarios"

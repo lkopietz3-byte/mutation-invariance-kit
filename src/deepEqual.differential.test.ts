@@ -2,8 +2,8 @@
  * Differential fuzz: deepEqual against node:util's isDeepStrictEqual, plus a
  * construction oracle (the generator knows whether the two values differ).
  * node:util is used here, in a test, only; the library itself never imports
- * it. The same file lives in payout-invariance-kit and
- * mutation-invariance-kit; only the import line differs.
+ * it. The same file lives in @evidencekit/payout-invariance and
+ * @evidencekit/input-invariance; only the import line differs.
  *
  * Intentional divergences, all in the fail-closed direction (deepEqual says
  * "different" where isDeepStrictEqual says "equal"):

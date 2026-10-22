@@ -1,6 +1,6 @@
 {
-  "name": "mutation-invariance-kit",
-  "version": "0.3.0",
+  "name": "@evidencekit/input-invariance",
+  "version": "0.3.1",
   "description": "Check whether a decision, score, or ranking function's output changes when you mutate an input it should ignore, such as a name, zip code, or price.",
   "keywords": [
     "invariance",
@@ -12,17 +12,18 @@
     "regression-testing",
     "testing",
     "typescript",
-    "honesty-kits"
+    "evidence-kit",
+    "mutation-invariance-kit"
   ],
   "author": "Lucas Kopietz",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lkopietz3-byte/mutation-invariance-kit.git"
+    "url": "git+https://github.com/evidencekit/input-invariance.git"
   },
-  "homepage": "https://lkopietz3-byte.github.io/honesty-kits/#mutation-invariance-kit",
+  "homepage": "https://github.com/evidencekit/input-invariance#readme",
   "bugs": {
-    "url": "https://github.com/lkopietz3-byte/mutation-invariance-kit/issues"
+    "url": "https://github.com/evidencekit/input-invariance/issues"
   },
   "type": "module",
   "main": "./dist/index.js",
@@ -80,5 +81,9 @@
     "typescript-eslint": "8.70.0",
     "vite": "7.3.6",
     "vitest": "4.1.11"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

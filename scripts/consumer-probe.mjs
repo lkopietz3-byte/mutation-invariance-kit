@@ -3,9 +3,9 @@
 // outputs. Run by scripts/verify-package.mjs.
 import assert from 'node:assert/strict';
 
-import * as root from 'mutation-invariance-kit';
-import { assertInvariance, deepEqual, priceScenarios as rootPriceScenarios } from 'mutation-invariance-kit';
-import { geographyScenarios, priceScenarios, protectedAttributeScenarios } from 'mutation-invariance-kit/presets';
+import * as root from '@evidencekit/input-invariance';
+import { assertInvariance, deepEqual, priceScenarios as rootPriceScenarios } from '@evidencekit/input-invariance';
+import { geographyScenarios, priceScenarios, protectedAttributeScenarios } from '@evidencekit/input-invariance/presets';
 
 // The root re-exports the same preset functions as the ./presets subpath.
 assert.equal(rootPriceScenarios, priceScenarios);

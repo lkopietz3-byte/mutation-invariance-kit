@@ -4,7 +4,7 @@
  * `Object.prototype.toString`) but fail the built-in's brand check. They must
  * be "not comparable" (equal only to themselves), never compared as ordinary
  * objects. Plain objects and ordinary class instances must not change. The
- * same file lives in payout-invariance-kit and mutation-invariance-kit; only
+ * same file lives in @evidencekit/payout-invariance and @evidencekit/input-invariance; only
  * the two import lines differ.
  */
 import { createContext, runInContext } from "node:vm";

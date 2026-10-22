@@ -8,7 +8,7 @@ import {
   type InvarianceResult,
   type MutationScenario,
   type ScenarioCategory,
-} from 'mutation-invariance-kit';
+} from '@evidencekit/input-invariance';
 import {
   geographyScenarios,
   priceScenarios,
@@ -16,7 +16,7 @@ import {
   type GeographyScenariosOptions,
   type PriceScenariosOptions,
   type ProtectedAttributeScenariosOptions,
-} from 'mutation-invariance-kit/presets';
+} from '@evidencekit/input-invariance/presets';
 
 interface Application {
   name: string;
