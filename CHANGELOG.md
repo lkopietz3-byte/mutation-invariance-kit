@@ -14,7 +14,7 @@ No change to the library's behavior or API.
 
 - Renamed the package from `mutation-invariance-kit` to `@evidencekit/input-invariance`. Install the new name and update your imports (`@evidencekit/input-invariance` and `@evidencekit/input-invariance/presets`). The repository moved to `evidencekit/input-invariance`.
 
-## [0.3.0] - unreleased
+## [0.3.0] - 2026-10-12
 
 ### Breaking changes
 
