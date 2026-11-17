@@ -4,7 +4,6 @@ Check whether a decision, score, or ranking function's output changes when you m
 
 ## Read first
 - `ENGINEERING.md` holds this package's invariants and design rules; read it before changing behavior.
-- `PROJECT_CONTEXT.md` is the current project state and decisions.
 - `SECURITY.md` covers the security posture; follow it for anything touching input handling.
 
 ## Commands (from package.json)
@@ -23,11 +22,7 @@ Check whether a decision, score, or ranking function's output changes when you m
 - Runtime `dependencies` stay empty; add dev tooling only.
 - Keep unrelated uncommitted work intact; never stage or reset the whole tree.
 
-## Review preparation
-
-See [docs/REVIEW_READINESS.md](docs/REVIEW_READINESS.md) for milestone review cadence, declared verification gates and the next launch-preparation task.
-
-## Code Review Rules
+## Review notes
 
 - Require every supplied scenario to change the input and preserve the baseline output before returning passed: true. Reject empty/sparse/malformed scenarios, async or throwing hooks, non-boolean comparators, async cleanup and in-place changes to the base input, a mutated input or the baseline.
 - Preserve caller immutability and fail-closed deepEqual/snapshot behavior. Recognize built-ins through intrinsics, preserve compared metadata and use safe own-property writes. Coordinate shared copy changes with payout-invariance-kit.
