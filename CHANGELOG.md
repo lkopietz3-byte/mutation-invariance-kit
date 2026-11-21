@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-20
+
+Documentation only. The package code and API are the same as 0.3.0.
+
+### Changed
+
+- The packaged CHANGELOG dates every release. The 0.3.0 package listed its own version as unreleased.
+
 ## [0.3.0] - 2026-10-12
 
 ### Breaking changes
